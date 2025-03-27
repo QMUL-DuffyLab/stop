@@ -7,7 +7,7 @@ module lattice
   real(kind=CF), parameter, public :: pi = 3.1415926535
   real(kind=CF), parameter :: atol = 1.0e-6
   integer(kind=CI), public :: coord
-  integer(kind=CI), allocatable, public :: sites(:, :), nn(:, :)
+  integer(kind=CI), allocatable, public :: n_i(:, :), neighbours(:, :)
   integer(kind=CI), allocatable, public :: coords(:, :)
   public :: generate_lattice
   
@@ -48,11 +48,11 @@ module lattice
         stop
       end select
 
-      allocate(nn(nmax, coord))
-      allocate(sites(nmax, n_s))
+      allocate(neighbours(nmax, coord))
+      allocate(n_i(nmax, n_s))
       allocate(coords(nmax, 2))
-      nn = 0_CI
-      sites = 0_CI
+      neighbours = 0_CI
+      n_i = 0_CI
       n_current = 1_CI
       coords = 0_CI
       do while (n_current.lt.nmax)
@@ -82,7 +82,7 @@ module lattice
         do j = 1, nmax
           do k = 1, coord
             if (all((coords(i, :) - coords(j, :)).eq.lv(k, :))) then
-              nn(i, m) = j
+              neighbours(i, m) = j
               m = m + 1
             end if
           end do

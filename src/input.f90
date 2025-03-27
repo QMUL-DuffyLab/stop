@@ -7,6 +7,7 @@ module input
   integer, parameter, public :: CI = c_int
   integer, parameter, public :: CB = c_bool
   character(len=10), public :: protein_name, lattice_name
+  character(len=100), public :: outdir
   integer(kind=CI), public :: n_p, n_s, n_sites, n_counts, n_repeats
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
@@ -90,6 +91,7 @@ module input
       read(nunit, *) binwidth
       read(nunit, *) n_counts
       read(nunit, *) n_repeats
+      read(nunit, '(a)') outdir
 
      end subroutine get_simulation_params
 
