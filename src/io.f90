@@ -56,6 +56,7 @@ module io
       allocate(n_thermal(n_p))
       allocate(hop(n_s))
       allocate(emissive(n_s))
+      allocate(xsec(n_s))
 
       read(nunit, *) p_names
       read(nunit, *) s_names

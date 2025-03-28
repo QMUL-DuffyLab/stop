@@ -4,7 +4,7 @@ CURDIR = $(shell pwd)
 SRCDIR = ${CURDIR}/src
 LIB = ${CURDIR}
 FLAGS = -gdwarf-3 -std=f2018 -ffree-form -Wall -Werror -pedantic -fcheck=all
-SOURCES = ${SRCDIR}/io.f90 ${SRCDIR}/lattice.f90 ${SRCDIR}/main.f90
+SOURCES := $(wildcard ${SRCDIR}/*.f90)
 TARGET = stop
 
 OBJECTS = $(patsubst %.f90, %.o, $(SOURCES))
