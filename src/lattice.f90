@@ -1,7 +1,7 @@
 module lattice
   use iso_c_binding
   use mpi_f08
-  use input
+  use io
   implicit none
   private
   real(kind=CF), parameter, public :: pi = 3.1415926535

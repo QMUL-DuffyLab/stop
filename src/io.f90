@@ -1,4 +1,4 @@
-module input
+module io
   use mpi_f08
   use iso_c_binding
   implicit none
@@ -16,7 +16,7 @@ module input
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
                                intra(:, :), ann(:, :)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :)
-  public :: get_protein_params, get_simulation_params
+  public :: get_protein_params, get_simulation_params, print_lattice
 
   contains
 
@@ -95,4 +95,16 @@ module input
 
      end subroutine get_simulation_params
 
-end module
+     subroutine print_lattice(filename, coords, neighbours)
+       character(len=*) :: filename
+       integer, intent(in) :: coords(:, :)
+       integer, intent(in) :: neighbours(:, :)
+       integer :: nunit, i
+       open(newunit=nunit, file=filename)
+       do i = 1, n_sites
+         write(nunit, *) i, coords(i, :), neighbours(i, :)
+       end do
+       close(nunit)
+     end subroutine print_lattice
+
+end module io

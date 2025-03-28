@@ -1,6 +1,6 @@
 module mc
   use mpi_f08
-  use input
+  use io
   use lattice
   implicit none
   private
