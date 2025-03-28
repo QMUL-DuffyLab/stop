@@ -7,16 +7,19 @@ module io
   integer, parameter, public :: CI = c_int
   integer, parameter, public :: CB = c_bool
   character(len=10), public :: protein_name, lattice_name
+  character(len=30), allocatable :: labels(:)
   character(len=100), public :: outdir
   integer(kind=CI), public :: n_p, n_s, n_sites, n_counts, n_repeats
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
-    which_p(:), which_ann(:, :)
+    which_p(:), which_ann(:, :), counts(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
-                               intra(:, :), ann(:, :)
-  logical(kind=CB), allocatable, public :: emissive(:), dist(:, :)
-  public :: get_protein_params, get_simulation_params, print_lattice
+                               intra(:, :), ann(:, :), bins(:)
+  logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
+    emissive_columns(:)
+  public :: get_protein_params, get_simulation_params,&
+    print_lattice, generate_histogram, write_histogram
 
   contains
 
@@ -52,6 +55,7 @@ module io
       allocate(n_tot(n_p))
       allocate(n_thermal(n_p))
       allocate(hop(n_s))
+      allocate(emissive(n_s))
 
       read(nunit, *) p_names
       read(nunit, *) s_names
@@ -64,47 +68,108 @@ module io
       read(nunit, *) intra_temp
       read(nunit, *) ann_temp
       read(nunit, *) which_ann_temp
-      read(nunit, *) emissive
       read(nunit, *) xsec
+      read(nunit, *) emissive
 
       dist      = reshape(dist_temp,      (/ n_s, n_s /))
       intra     = reshape(intra_temp,     (/ n_s, n_s /))
       ann       = reshape(ann_temp,       (/ n_s, n_s /))
       which_ann = reshape(which_ann_temp, (/ n_s, n_s /))
 
-     end subroutine get_protein_params
+    end subroutine get_protein_params
 
     subroutine get_simulation_params(filename)
-      ! get the simulation parameters from a file
-      character(len=*), intent(in) :: filename
-      integer(kind=CI) :: nunit
+     ! get the simulation parameters from a file
+     character(len=*), intent(in) :: filename
+     integer(kind=CI) :: nunit
 
+     open(newunit=nunit, file=filename)
+     read(nunit, *) fwhm
+     read(nunit, *) fluence
+     read(nunit, *) n_sites
+     read(nunit, *) lattice_name
+     read(nunit, *) rep_rate
+     read(nunit, *) tmax
+     read(nunit, *) dt1
+     read(nunit, *) dt2
+     read(nunit, *) binwidth
+     read(nunit, *) n_counts
+     read(nunit, *) n_repeats
+     read(nunit, '(a)') outdir
+
+    end subroutine get_simulation_params
+
+    subroutine print_lattice(filename, coords, neighbours)
+      character(len=*) :: filename
+      integer, intent(in) :: coords(:, :)
+      integer, intent(in) :: neighbours(:, :)
+      integer :: nunit, i
       open(newunit=nunit, file=filename)
-      read(nunit, *) fwhm
-      read(nunit, *) fluence
-      read(nunit, *) n_sites
-      read(nunit, *) lattice_name
-      read(nunit, *) rep_rate
-      read(nunit, *) tmax
-      read(nunit, *) dt1
-      read(nunit, *) dt2
-      read(nunit, *) binwidth
-      read(nunit, *) n_counts
-      read(nunit, *) n_repeats
-      read(nunit, '(a)') outdir
+      do i = 1, n_sites
+        write(nunit, *) i, coords(i, :), neighbours(i, :)
+      end do
+      close(nunit)
+    end subroutine print_lattice
 
-     end subroutine get_simulation_params
+    subroutine generate_histogram()
+      integer :: n_losses, n_bins, i, j, loss_index
+      n_losses = n_s * (2 + n_s)
+      n_bins = ceiling(tmax / binwidth)
+      allocate(counts(n_bins, n_losses), source=0_CI)
+      allocate(labels(n_losses + 1))
+      allocate(bins(n_bins), source=0.0_CF)
+      allocate(emissive_columns(n_losses + 1), source=.false._CB)
 
-     subroutine print_lattice(filename, coords, neighbours)
-       character(len=*) :: filename
-       integer, intent(in) :: coords(:, :)
-       integer, intent(in) :: neighbours(:, :)
-       integer :: nunit, i
-       open(newunit=nunit, file=filename)
-       do i = 1, n_sites
-         write(nunit, *) i, coords(i, :), neighbours(i, :)
-       end do
-       close(nunit)
-     end subroutine print_lattice
+      write(labels(1), '(a)') "Time (s)"
+
+      do i = 1, n_bins
+        bins(i) = (i - 1) * binwidth
+      end do
+
+      loss_index = 2
+      do i = 1, n_s
+        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
+          "_se_",&
+          trim(adjustl(s_names(i)))
+        loss_index = loss_index + 1
+      end do
+
+      do i = 1, n_s
+        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
+          "_decay_",&
+          trim(adjustl(s_names(i)))
+        if (emissive(i)) then
+          emissive_columns(loss_index) = .true.
+        end if
+        loss_index = loss_index + 1
+      end do
+
+      do i = 1, n_s
+        do j = 1, n_s
+          write(labels(loss_index), '(a, a, a, a, a)') trim(adjustl(protein_name)),&
+            "_ann_",&
+            trim(adjustl(s_names(i))), "_", trim(adjustl(s_names(j)))
+          loss_index = loss_index + 1
+        end do
+      end do
+
+    end subroutine generate_histogram
+
+    subroutine write_histogram(filename)
+      character(len=*) :: filename
+      integer :: nunit, i, nrows
+      character(len=20) :: str_fmt
+      nrows = size(bins)
+
+      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(I10))"
+      write(*, *) str_fmt, " ", nrows
+      open(newunit=nunit, file=filename)
+      write(nunit, *) labels
+      write(nunit, *) emissive_columns
+      do i = 1, nrows
+        write(nunit, str_fmt) bins(i), counts(i, :)
+      end do
+      close(nunit)
+    end subroutine write_histogram
 
 end module io
