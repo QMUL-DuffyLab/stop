@@ -158,10 +158,10 @@ module io
     subroutine write_histogram(filename)
       character(len=*) :: filename
       integer :: nunit, i, nrows
-      character(len=20) :: str_fmt
+      character(len=30) :: str_fmt
       nrows = size(bins)
 
-      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(I10))"
+      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       write(*, *) str_fmt, " ", nrows
       open(newunit=nunit, file=filename)
       write(nunit, *) labels
