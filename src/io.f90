@@ -9,7 +9,7 @@ module io
   character(len=10), public :: protein_name, lattice_name
   character(len=30), allocatable :: labels(:)
   character(len=100), public :: outdir
-  integer(kind=CI), public :: n_p, n_s, n_sites, n_counts, n_repeats
+  integer(kind=CI), public :: n_p, n_s, n_sites, n_bins, n_counts, n_repeats
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
@@ -116,13 +116,13 @@ module io
     end subroutine print_lattice
 
     subroutine generate_histogram()
-      integer :: n_losses, n_bins, i, j, loss_index
+      integer :: n_losses, i, j, loss_index
       n_losses = n_s * (2 + n_s)
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
       allocate(labels(n_losses + 1))
       allocate(bins(n_bins), source=0.0_CF)
-      allocate(emissive_columns(n_losses + 1), source=.false._CB)
+      allocate(emissive_columns(n_losses), source=.false._CB)
 
       write(labels(1), '(a)') "Time (s)"
 
@@ -143,7 +143,7 @@ module io
           "_decay_",&
           trim(adjustl(s_names(i)))
         if (emissive(i)) then
-          emissive_columns(loss_index) = .true.
+          emissive_columns(loss_index - 1) = .true.
         end if
         loss_index = loss_index + 1
       end do
@@ -161,15 +161,14 @@ module io
 
     subroutine write_histogram(filename)
       character(len=*) :: filename
-      integer :: nunit, i, nrows
+      integer :: nunit, i
       character(len=30) :: str_fmt
-      nrows = size(bins)
 
       write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       open(newunit=nunit, file=filename)
       write(nunit, *) labels
       write(nunit, *) emissive_columns
-      do i = 1, nrows
+      do i = 1, n_bins
         write(nunit, str_fmt) bins(i), counts(i, :)
       end do
       close(nunit)
