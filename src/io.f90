@@ -77,6 +77,9 @@ module io
       ann       = reshape(ann_temp,       (/ n_s, n_s /))
       which_ann = reshape(which_ann_temp, (/ n_s, n_s /))
 
+      hop = 1.0_CF / hop
+      intra = 1.0_CF / intra
+      ann = 1.0_CF / ann
     end subroutine get_protein_params
 
     subroutine get_simulation_params(filename)

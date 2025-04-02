@@ -5,6 +5,7 @@ module mc
   implicit none
   private
   logical(kind=CB) :: possible(6) ! 6 types of moves considered
+  integer(kind=CI), public :: n_accepted(6)
   real(kind=CF), allocatable, public :: pulse(:)
   real(kind=CF), public :: mu
   type :: move_type
@@ -124,7 +125,7 @@ module mc
       if ((ft.gt.0.0).and.(any(xsec * n_i(site, :).gt.0.0))) then
         possible(2) = .true.
       end if
-      ! any non-zero population allows for hopping, decay, transfer
+      ! any non-zero population allows for hopping, transfer, decay
       ! (3, 4, 5)
       if (any(n_i(site, :).gt.0)) then
         possible(3) = .true.
@@ -213,11 +214,6 @@ module mc
         cm%fst = s
         cm%emissive = emissive(s)
         cm%loss_index = n_s + s
-        if (cm%loss_index.gt.24) then
-          write(*, *) "cm%loss_index is too big (decay)"
-          write(*, *) "s = ", s
-          write(*, *) "cm%loss_index = ", cm%loss_index
-        end if
       case (6)
         ! annihilation
         s = rand_nonzero_int(n_i(i, :))
@@ -285,6 +281,8 @@ module mc
       logical(kind=CB) :: bin
       integer(kind=CI) :: pind, i, j, s, n_poss
 
+      n_accepted = 0_CI
+
       if (t.le.2.0*mu) then
         pind = int(t / dt1) + 1
         if (pind.le.size(pulse)) then
@@ -313,8 +311,8 @@ module mc
           prob = cm%rate * dt1 * exp(-1.0 * cm%rate * dt1)
           call random_number(r)
           if (r.lt.prob) then
+            n_accepted(cm%mt) = n_accepted(cm%mt) + 1
             call do_move()
-            write(*, *) r, prob, cm%rate, dt1, cm%loss_index, cm%mt
             if (bin.and.cm%loss_index.gt.0) then
               counts(ceiling(t / binwidth), cm%loss_index) = &
                 counts(ceiling(t / binwidth), cm%loss_index) + 1

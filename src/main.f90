@@ -5,8 +5,8 @@ program main
   use mc
   implicit none
   character(100) :: protein_file, simulation_file, latt_file, hist_file
-  integer(kind=CI) :: num_procs, rank, mpierr, run
-  real(kind=CF) :: t
+  integer(kind=CI) :: num_procs, rank, mpierr, run, tot_accepted(6)
+  real(kind=CF) :: t, bint
   logical(kind=CB) :: bin
 
   call MPI_Init(mpierr)
@@ -16,9 +16,11 @@ program main
   call get_command_argument(1, protein_file)
   call get_command_argument(2, simulation_file)
 
-  run = 1
-  t = 0.0
-  bin = .true.
+  run = 1_CI
+  t = 0.0_CF
+  bint = 0.0_CF
+  bin = .true._CB
+  tot_accepted = 0_CI
 
   call get_protein_params(protein_file)
   call get_simulation_params(simulation_file)
@@ -28,14 +30,23 @@ program main
   write(hist_file, '(a, a, a, i0, a)') trim(adjustl(outdir)),&
     trim(adjustl(protein_name)), "_run_", run, ".csv"
 
+  
   call generate_lattice(lattice_name, n_sites)
   call generate_histogram()
 
   call construct_pulse(fwhm, dt1, fluence)
   do while (t.lt.tmax)
     call mc_step(t, bin)
+    tot_accepted = tot_accepted + n_accepted
     t = t + dt1
+    bint = bint + dt1
+    if (bint.gt.binwidth) then
+      write(*, '(ES10.4, 1X, 24(1X, I4))') t, counts(ceiling(t/binwidth), :)
+      bint = 0.0_CF
+    end if
   end do
+
+  write(*, *) tot_accepted
 
   if (rank.eq.1) then
     call print_lattice(latt_file, coords, neighbours)
