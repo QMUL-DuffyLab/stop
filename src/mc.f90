@@ -27,9 +27,16 @@ module mc
       real(kind=CF) :: r
       integer(kind=CI) :: i
       integer(kind=CI), allocatable :: ind(:)
-      ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0.0)
+      ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0.0_CF)
       call random_number(r)
-      i = ceiling(r * size(arr))
+      i = ceiling(r * size(ind))
+      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+        write(*, *) "invalid i returned by rand_nonzero_real"
+        write(*, *) "input array: ", arr
+        write(*, *) "index array: ", ind
+        write(*, *) "rand(): ", r
+        stop
+      end if
     end function rand_nonzero_real
 
     function rand_nonzero_int(arr) result(i)
@@ -37,9 +44,16 @@ module mc
       real(kind=CF) :: r
       integer(kind=CI) :: i
       integer(kind=CI), allocatable :: ind(:)
-      ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0.0)
+      ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0_CI)
       call random_number(r)
-      i = ceiling(r * size(arr))
+      i = ceiling(r * size(ind))
+      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+        write(*, *) "invalid i returned by rand_nonzero_int"
+        write(*, *) "input array: ", arr
+        write(*, *) "index array: ", ind
+        write(*, *) "rand(): ", r
+        stop
+      end if
     end function rand_nonzero_int
 
     function rand_true(arr) result(i)
@@ -49,7 +63,14 @@ module mc
       integer(kind=CI), allocatable :: ind(:)
       ind = pack([(i, i = 1_CI, size(arr))], arr)
       call random_number(r)
-      i = ceiling(r * size(arr))
+      i = ceiling(r * size(ind))
+      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+        write(*, *) "invalid i returned by rand_true"
+        write(*, *) "input array: ", arr
+        write(*, *) "index array: ", ind
+        write(*, *) "rand(): ", r
+        stop
+      end if
     end function rand_true
 
     function rand_int(imax) result(i)
@@ -79,11 +100,11 @@ module mc
       mu = 2.0 * fwhm
       pulse_tmax = 2.0 * mu
       pulse_len = int(pulse_tmax / dt)
-      sigma = fwhm / (2.0 * (sqrt(2.0 * log(2.0))))
-      allocate(pulse(pulse_len))
+      sigma = (fwhm) / (2.0 * (sqrt(2.0 * log(2.0))))
+      allocate(pulse(pulse_len), source=0.0_CF)
       do i = 1, pulse_len
         pulse(i) = (fluence) / (sigma * sqrt(2.0 * pi)) * &
-          exp(-1.0 * ((i * dt) - mu)**2 / (sqrt(2.0) * sigma)**2)
+          exp(-1.0 * ((i * dt) - (mu))**2 / (sqrt(2.0) * sigma)**2)
       end do
     end subroutine construct_pulse
 
@@ -124,10 +145,13 @@ module mc
 
       ! make sure there's no leftover stuff in current_move
       ! that might mess with this
+      ! write(*, *) cm%mt
       call zero_move(cm)
+      ! write(*, *) cm%mt
       call possible_moves(i, ft)
       ! indices where possible is true
       cm%mt = rand_true(possible)
+      ! write(*, *) cm%mt
       cm%isi = i
       cm%fsi = i
 
@@ -141,6 +165,7 @@ module mc
         cm%rate = ft * xsec(s) * (n_tot(p) - n_i(i, s)) / n_tot(p)
         cm%ist = s
         cm%fst = s
+        ! write(*, *) ft, s, xsec(s), p, cm%mt, cm%rate
       case (2)
         ! stimulated emission
         s = rand_nonzero_real(xsec) ! which state is it
@@ -151,8 +176,14 @@ module mc
         ! this assumes there's only one protein in the system
         ! i.e. it'll need changing if there are multiple proteins
         cm%loss_index = s
+        if (cm%loss_index.gt.24) then
+          write(*, *) "cm%loss_index is too big (SE)"
+          write(*, *) "s = ", s
+          write(*, *) "cm%loss_index = ", cm%loss_index
+        end if
       case (3)
         ! hop
+        ! write(*, *) i, n_i(i, :), possible, cm%mt
         s = rand_nonzero_int(n_i(i, :))
         nn = rand_nonzero_int(neighbours(i, :))
         p = which_p(s)
@@ -182,6 +213,11 @@ module mc
         cm%fst = s
         cm%emissive = emissive(s)
         cm%loss_index = n_s + s
+        if (cm%loss_index.gt.24) then
+          write(*, *) "cm%loss_index is too big (decay)"
+          write(*, *) "s = ", s
+          write(*, *) "cm%loss_index = ", cm%loss_index
+        end if
       case (6)
         ! annihilation
         s = rand_nonzero_int(n_i(i, :))
@@ -198,7 +234,7 @@ module mc
           s = s2
           s2 = n_eff
         end if
-
+        ! write(*, *) "dist", s, s2
         if (dist(s, s2)) then
           cm%rate = n_i(i, s) * n_i(i, s2) * ann(s, s2)
         else
@@ -206,6 +242,12 @@ module mc
           cm%rate = ann(s, s2) * (n_eff * (n_eff - 1)) / 2.0
         end if
         cm%loss_index = (2 + (s - 1)) * n_s + s2
+        if (cm%loss_index.gt.24) then
+          write(*, *) "cm%loss_index is too big (annihilation)"
+          write(*, *) "s = ", s
+          write(*, *) "s2 = ", s2
+          write(*, *) "cm%loss_index = ", cm%loss_index
+        end if
         cm%ist = s
         cm%fst = s2
       case default
@@ -274,8 +316,8 @@ module mc
             call do_move()
             write(*, *) r, prob, cm%rate, dt1, cm%loss_index, cm%mt
             if (bin.and.cm%loss_index.gt.0) then
-              counts(cm%loss_index, ceiling(t / binwidth)) = &
-                counts(cm%loss_index, ceiling(t / binwidth)) + 1
+              counts(ceiling(t / binwidth), cm%loss_index) = &
+                counts(ceiling(t / binwidth), cm%loss_index) + 1
             end if
           end if
         end do
