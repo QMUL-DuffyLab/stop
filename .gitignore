@@ -3,3 +3,4 @@
 stop
 out/*
 in/*
+*.ipynb

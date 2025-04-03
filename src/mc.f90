@@ -23,6 +23,60 @@ module mc
   
   contains
 
+    subroutine init_random(salt)
+      ! function to seed the actual RNG : cf.
+      ! https://gcc.gnu.org/onlinedocs/gcc-4.9.1/gfortran/RANDOM_005fSEED.html
+      use iso_fortran_env, only: int64
+      integer(kind=CI), allocatable :: seed(:)
+      integer(kind=CI) :: i, n, un, istat, dt(8), salt
+      integer(int64) :: t
+          
+      call random_seed(size = n)
+      allocate(seed(n))
+      ! First try if the OS provides a random number generator
+      open(newunit=un, file="/dev/urandom", access="stream", &
+           form="unformatted", action="read", status="old", &
+           iostat=istat)
+      if (istat == 0) then
+         read(un) seed
+         close(un)
+      else
+         ! Fallback to XOR:ing the current time and a salt.
+         ! The salt will be taken from the process rank and run
+         ! number because this is being done in parallel
+         ! the gnu.org page uses getpid() for this but that's a
+         ! GNU extension and i don't want to rely on it
+         call system_clock(t)
+         if (t == 0) then
+            call date_and_time(values=dt)
+            t = (dt(1) - 1970) * 365_int64 * 24 * 60 * 60 * 1000 &
+                 + dt(2) * 31_int64 * 24 * 60 * 60 * 1000 &
+                 + dt(3) * 24_int64 * 60 * 60 * 1000 &
+                 + dt(5) * 60 * 60 * 1000 &
+                 + dt(6) * 60 * 1000 + dt(7) * 1000 &
+                 + dt(8)
+         end if
+         t = ieor(t, int(salt, kind(t)))
+         do i = 1, n
+            seed(i) = lcg(t)
+         end do
+      end if
+      call random_seed(put=seed)
+      contains
+        function lcg(s)
+          ! shitty RNG to seed good RNG
+          integer :: lcg
+          integer(int64) :: s
+          if (s == 0) then
+            s = 104729
+          else
+            s = mod(s, 4294967296_int64)
+          end if
+          s = mod(s * 279470273_int64, 4294967291_int64)
+          lcg = int(mod(s, int(huge(0), int64)), kind(0))
+        end function lcg
+    end subroutine init_random
+
     function rand_nonzero_real(arr) result(i)
       real(kind=CF), intent(in) :: arr(:)
       real(kind=CF) :: r
@@ -146,13 +200,10 @@ module mc
 
       ! make sure there's no leftover stuff in current_move
       ! that might mess with this
-      ! write(*, *) cm%mt
       call zero_move(cm)
-      ! write(*, *) cm%mt
       call possible_moves(i, ft)
       ! indices where possible is true
       cm%mt = rand_true(possible)
-      ! write(*, *) cm%mt
       cm%isi = i
       cm%fsi = i
 
@@ -166,7 +217,6 @@ module mc
         cm%rate = ft * xsec(s) * (n_tot(p) - n_i(i, s)) / n_tot(p)
         cm%ist = s
         cm%fst = s
-        ! write(*, *) ft, s, xsec(s), p, cm%mt, cm%rate
       case (2)
         ! stimulated emission
         s = rand_nonzero_real(xsec) ! which state is it
@@ -177,14 +227,8 @@ module mc
         ! this assumes there's only one protein in the system
         ! i.e. it'll need changing if there are multiple proteins
         cm%loss_index = s
-        if (cm%loss_index.gt.24) then
-          write(*, *) "cm%loss_index is too big (SE)"
-          write(*, *) "s = ", s
-          write(*, *) "cm%loss_index = ", cm%loss_index
-        end if
       case (3)
         ! hop
-        ! write(*, *) i, n_i(i, :), possible, cm%mt
         s = rand_nonzero_int(n_i(i, :))
         nn = rand_nonzero_int(neighbours(i, :))
         p = which_p(s)
@@ -230,7 +274,6 @@ module mc
           s = s2
           s2 = n_eff
         end if
-        ! write(*, *) "dist", s, s2
         if (dist(s, s2)) then
           cm%rate = n_i(i, s) * n_i(i, s2) * ann(s, s2)
         else
@@ -238,12 +281,6 @@ module mc
           cm%rate = ann(s, s2) * (n_eff * (n_eff - 1)) / 2.0
         end if
         cm%loss_index = (2 + (s - 1)) * n_s + s2
-        if (cm%loss_index.gt.24) then
-          write(*, *) "cm%loss_index is too big (annihilation)"
-          write(*, *) "s = ", s
-          write(*, *) "s2 = ", s2
-          write(*, *) "cm%loss_index = ", cm%loss_index
-        end if
         cm%ist = s
         cm%fst = s2
       case default
@@ -268,8 +305,10 @@ module mc
       case (5) ! decay
         n_i(cm%isi, cm%ist) = n_i(cm%isi, cm%ist) - 1
       case (6) ! annihilation
-        a = which_ann(cm%ist, cm%fst)
-        n_i(cm%isi, a) = n_i(cm%isi, a) - 1
+        a = ann_remainder(cm%ist, cm%fst) ! what state remains?
+        n_i(cm%isi, cm%ist) = n_i(cm%isi, cm%ist) - 1
+        n_i(cm%isi, cm%fst) = n_i(cm%isi, cm%fst) - 1
+        n_i(cm%isi, a) = n_i(cm%isi, a) + 1
       case default
         write(*, *) "something wrong in do_cm!"
         stop
@@ -321,15 +360,15 @@ module mc
       end do
     end subroutine mc_step
 
-    subroutine do_run(seed, max_counts, out_file_path)
-      integer(kind=CI), intent(in) :: seed(8), max_counts
+    subroutine do_run(salt, max_counts, out_file_path)
+      integer(kind=CI), intent(in) :: salt, max_counts
       real(kind=CF) :: t, interval
       integer(kind=CI) :: i, j, curr_maxcount, rep, tot_acc(6)
       integer(kind=CI), allocatable :: ec(:)
       character(100) :: out_file_path, outfile
       logical :: skip
 
-      call random_seed(put=seed)
+      call init_random(salt)
       counts = 0_CI
 
       ec = pack([(i, i = 1_CI, size(emissive_columns))], emissive_columns)
@@ -337,7 +376,6 @@ module mc
       rep = 1_CI
       curr_maxcount = 0_CI
       interval = 1.0 / rep_rate
-      write(*, *) seed
 
       reploop: do while (curr_maxcount.lt.max_counts)
 
@@ -374,7 +412,7 @@ module mc
             end do
           end do
           ! curr_maxcount = maxval(counts(:, ec))
-          write(*,*) seed(1), rep, curr_maxcount
+          write(*,*) salt, rep, curr_maxcount
         end if
 
         rep = rep + 1
@@ -382,9 +420,9 @@ module mc
       end do reploop
 
       ! max count reached
-      write(*, '(i0, 1X, i0, 1X, i0)') seed(1), rep, curr_maxcount
+      write(*, '(i0, 1X, i0, 1X, i0)') salt, rep, curr_maxcount
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
-        "_seed_", seed(1), "_rep_", rep, "_final.csv"
+        "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)
 
     end subroutine do_run

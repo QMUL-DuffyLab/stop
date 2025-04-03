@@ -13,7 +13,7 @@ module io
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
-    which_p(:), which_ann(:, :), counts(:, :)
+    which_p(:), ann_remainder(:, :), counts(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
                                intra(:, :), ann(:, :), bins(:)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
@@ -32,7 +32,7 @@ module io
       character(len=*), intent(in) :: filename
       integer(kind=CI) :: nunit
       logical(kind=CB), allocatable :: dist_temp(:)
-      integer(kind=CI), allocatable :: which_ann_temp(:)
+      integer(kind=CI), allocatable :: ann_rem_temp(:)
       real(kind=CF), allocatable :: intra_temp(:), ann_temp(:)
 
       open(newunit=nunit, file=filename)
@@ -50,8 +50,8 @@ module io
       allocate(intra(n_s, n_s))
       allocate(ann_temp(n_s * n_s))
       allocate(ann(n_s, n_s))
-      allocate(which_ann_temp(n_s * n_s))
-      allocate(which_ann(n_s, n_s))
+      allocate(ann_rem_temp(n_s * n_s))
+      allocate(ann_remainder(n_s, n_s))
       allocate(n_tot(n_p))
       allocate(n_thermal(n_p))
       allocate(hop(n_s))
@@ -68,14 +68,14 @@ module io
       read(nunit, *) hop
       read(nunit, *) intra_temp
       read(nunit, *) ann_temp
-      read(nunit, *) which_ann_temp
+      read(nunit, *) ann_rem_temp
       read(nunit, *) xsec
       read(nunit, *) emissive
 
-      dist      = reshape(dist_temp,      (/ n_s, n_s /))
-      intra     = reshape(intra_temp,     (/ n_s, n_s /))
-      ann       = reshape(ann_temp,       (/ n_s, n_s /))
-      which_ann = reshape(which_ann_temp, (/ n_s, n_s /))
+      dist          = reshape(dist_temp,    (/ n_s, n_s /))
+      intra         = reshape(intra_temp,   (/ n_s, n_s /))
+      ann           = reshape(ann_temp,     (/ n_s, n_s /))
+      ann_remainder = reshape(ann_rem_temp, (/ n_s, n_s /))
 
       hop = 1.0_CF / hop
       intra = 1.0_CF / intra

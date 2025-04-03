@@ -5,7 +5,7 @@ program main
   use mc
   implicit none
   character(100) :: protein_file, simulation_file, latt_file, hist_file, path
-  integer(kind=CI) :: num_procs, rank, mpierr, i, j, seed(8)
+  integer(kind=CI) :: num_procs, rank, mpierr, i, salt
 
   call MPI_Init(mpierr)
   call MPI_Comm_rank(MPI_COMM_WORLD, rank,      mpierr)
@@ -17,7 +17,6 @@ program main
   call get_protein_params(protein_file)
   call get_simulation_params(simulation_file)
 
-  ! call random_init(.true., .true.)
   call generate_lattice(lattice_name, n_sites)
   call generate_histogram()
   call construct_pulse(fwhm, dt1, fluence)
@@ -26,14 +25,12 @@ program main
 
     write(*, *) "Run ", i
 
-    do j = 1, 8
-      seed(j) = (i * num_procs) * (rank * 8) + j
-    end do
+    salt = rank * num_procs + i
 
     write(path, '(a, a, a, i0, a, i0, a)') trim(adjustl(outdir)),&
       trim(adjustl(protein_name)), "_run_", i, "_proc_", rank
 
-    call do_run(seed, int(n_counts / num_procs), path)
+    call do_run(salt, int(n_counts / num_procs), path)
 
     call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
