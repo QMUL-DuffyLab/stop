@@ -25,7 +25,7 @@ program main
 
     write(*, *) "Run ", i
 
-    salt = rank * num_procs + i
+    salt = rank + num_procs * i
 
     write(path, '(a, a, a, i0, a, i0, a)') trim(adjustl(outdir)),&
       trim(adjustl(protein_name)), "_run_", i, "_proc_", rank

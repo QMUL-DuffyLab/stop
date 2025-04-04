@@ -42,8 +42,8 @@ module mc
          close(un)
       else
          ! Fallback to XOR:ing the current time and a salt.
-         ! The salt will be taken from the process rank and run
-         ! number because this is being done in parallel
+         ! The salt is taken from the process rank and run
+         ! number because this is being done in parallel.
          ! the gnu.org page uses getpid() for this but that's a
          ! GNU extension and i don't want to rely on it
          call system_clock(t)
@@ -422,7 +422,7 @@ module mc
         end if
 
         write(nunit, *) rep, sum(n_i, dim=1)
-        write(*, *) salt, rep, sum(n_i, dim=1)
+        ! write(*, *) salt, rep, sum(n_i, dim=1)
         rep = rep + 1
 
       end do reploop
