@@ -122,9 +122,9 @@ module io
       allocate(counts(n_bins, n_losses), source=0_CI)
       allocate(labels(n_losses + 1))
       allocate(bins(n_bins), source=0.0_CF)
-      allocate(emissive_columns(n_losses), source=.false._CB)
+      allocate(emissive_columns(n_losses + 1), source=.false._CB)
 
-      write(labels(1), '(a)') "Time (s)"
+      write(labels(1), '(a)') "Time(s)"
 
       do i = 1, n_bins
         bins(i) = (i - 1) * binwidth
@@ -166,7 +166,7 @@ module io
 
       write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       open(newunit=nunit, file=filename)
-      write(nunit, *) labels
+      write(nunit, *) (trim(adjustl(labels(i))), i=1,size(labels))
       write(nunit, *) emissive_columns
       do i = 1, n_bins
         write(nunit, str_fmt) bins(i), counts(i, :)

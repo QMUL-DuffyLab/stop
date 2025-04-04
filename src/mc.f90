@@ -322,7 +322,7 @@ module mc
     subroutine mc_step(t, bin)
       real(kind=CF) :: ft, prob, r, t
       logical(kind=CB) :: bin
-      integer(kind=CI) :: pind, i, j, s, n_poss
+      integer(kind=CI) :: pind, i, j, s, n_poss, ibin
 
       n_accepted = 0_CI
 
@@ -354,9 +354,11 @@ module mc
             n_accepted(cm%mt) = n_accepted(cm%mt) + 1
             call do_move()
             if (bin.and.cm%loss_index.gt.0) then
-              counts(ceiling(t / binwidth), cm%loss_index) = &
-                counts(ceiling(t / binwidth), cm%loss_index) + 1
-
+              ibin = ceiling(t / binwidth)
+              if (ibin.eq.0) then
+                ibin = 1 ! if t = 0 ceiling returns 0; put in first bin
+              end if
+              counts(ibin, cm%loss_index) = counts(ibin, cm%loss_index) + 1
             end if
           end if
         end do

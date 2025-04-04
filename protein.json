@@ -1,4 +1,21 @@
 {
+  "Chl": {
+  "n_p": 1,
+  "n_s": 1,
+  "pigment_names": ["Chl"],
+  "state_names": ["Chl_S"],
+  "which_pigment": [1],
+  "abundance": [1.0],
+  "dist": [[false]],
+  "n_tot": [100],
+  "n_thermal": [100],
+  "hop": [0.0],
+  "intra": [[4e-9]],
+  "ann": [[16e-12]],
+  "ann_remainder": [[1]],
+  "xsec": [1.0e-14],
+  "emissive": [true]
+  },
   "LH2": {
   "n_p": 2,
   "n_s": 3,
@@ -6,7 +23,15 @@
   "state_names": ["BChl_S", "BChl_T", "Car_T"],
   "which_pigment": [1, 1, 2],
   "abundance": [1.0, 1.0, 1.0],
-  "dist": [[false, false, true], [false, false, true], [true, true, false]]
+  "dist": [[false, false, true], [false, false, true], [true, true, false]],
+  "n_tot": [42, 18],
+  "n_thermal": [27, 9],
+  "hop": [10e-12, 0.0, 0.0, 0.0],
+  "intra": [[4e-9, 15e-9, 0.0], [0.0, 100e-6, 10e-9], [0.0, 0.0, 7.7e-6]],
+  "ann": [[16e-12, 1e-9, 7.5e-9], [1e-9, 100e-9, 0.0], [7.5e-9, 0.0, 0.0]],
+  "ann_remainder": [[1, 2, 3], [2, 1, 0], [3, 0, 0]],
+  "xsec": [1.0e-14, 0.0, 0.0],
+  "emissive": [true, false, false]
   },
   "LHCII": {
   "n_p": 2,
