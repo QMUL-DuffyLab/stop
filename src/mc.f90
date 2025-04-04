@@ -84,8 +84,8 @@ module mc
       integer(kind=CI), allocatable :: ind(:)
       ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0.0_CF)
       call random_number(r)
-      i = ceiling(r * size(ind))
-      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+      i = ind(ceiling(r * size(ind)))
+      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
         write(*, *) "invalid i returned by rand_nonzero_real"
         write(*, *) "input array: ", arr
         write(*, *) "index array: ", ind
@@ -101,8 +101,8 @@ module mc
       integer(kind=CI), allocatable :: ind(:)
       ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0_CI)
       call random_number(r)
-      i = ceiling(r * size(ind))
-      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+      i = ind(ceiling(r * size(ind)))
+      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
         write(*, *) "invalid i returned by rand_nonzero_int"
         write(*, *) "input array: ", arr
         write(*, *) "index array: ", ind
@@ -118,8 +118,8 @@ module mc
       integer(kind=CI), allocatable :: ind(:)
       ind = pack([(i, i = 1_CI, size(arr))], arr)
       call random_number(r)
-      i = ceiling(r * size(ind))
-      if ((i.lt.1_CI).or.(i.gt.size(ind))) then
+      i = ind(ceiling(r * size(ind)))
+      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
         write(*, *) "invalid i returned by rand_true"
         write(*, *) "input array: ", arr
         write(*, *) "index array: ", ind
@@ -139,14 +139,14 @@ module mc
 
     subroutine zero_move(m)
       type(move_type) :: m
-      m%mt = 0
-      m%isi = 0
-      m%ist = 0
-      m%fsi = 0
-      m%fst = 0
-      m%loss_index = 0
-      m%emissive = .false.
-      m%rate = 0.0
+      m%mt = 0_CI
+      m%isi = 0_CI
+      m%ist = 0_CI
+      m%fsi = 0_CI
+      m%fst = 0_CI
+      m%loss_index = 0_CI
+      m%emissive = .false._CB
+      m%rate = 0.0_CF
     end subroutine zero_move
 
     subroutine construct_pulse(fwhm, dt, fluence)
@@ -167,29 +167,33 @@ module mc
       ! site - integer index into n_sites
       real(kind=CF), intent(in) :: ft 
       integer, intent(in) :: site
-      possible = .false.
+      possible = .false._CB
       ! if the pulse is on (ft) and there's a positive cross section
       ! then excitations can be generated. in general the second part
       ! should always be true, i guess, otherwise what are we doing here
       if ((ft.gt.0.0).and.(any(xsec.gt.0.0))) then
-        possible(1) = .true.
+        possible(1) = .true._CB
       end if
       ! product of xsec and current populations must be > 0
       ! in order for stimulated emission to occur
       if ((ft.gt.0.0).and.(any(xsec * n_i(site, :).gt.0.0))) then
-        possible(2) = .true.
+        possible(2) = .true._CB
       end if
-      ! any non-zero population allows for hopping, transfer, decay
+      ! any non-zero population allows for hopping, and decay
       ! (3, 4, 5)
       if (any(n_i(site, :).gt.0)) then
-        possible(3) = .true.
-        possible(4) = .true.
-        possible(5) = .true.
+        possible(3) = .true._CB
+        possible(5) = .true._CB
+      end if
+      if ((n_s.gt.1).and.(any(n_i(site, :).gt.0))) then
+        ! for transfer between states to be possible, there
+        ! must be more than one state on the protein
+        possible(4) = .true._CB
       end if
       if ((sum(n_i(site, :)).gt.1).and.(any(ann.gt.0.0))) then
         ! annihilation possible (actually this isn't strictly true
         ! and it might need fixing)
-        possible(6) = .true.
+        possible(6) = .true._CB
       end if
     end subroutine possible_moves
 
@@ -363,9 +367,9 @@ module mc
     subroutine do_run(salt, max_counts, out_file_path)
       integer(kind=CI), intent(in) :: salt, max_counts
       real(kind=CF) :: t, interval
-      integer(kind=CI) :: i, j, curr_maxcount, rep, tot_acc(6)
+      integer(kind=CI) :: i, j, curr_maxcount, rep, nunit
       integer(kind=CI), allocatable :: ec(:)
-      character(100) :: out_file_path, outfile
+      character(100) :: out_file_path, outfile, pop_file
       logical :: skip
 
       call init_random(salt)
@@ -377,6 +381,10 @@ module mc
       curr_maxcount = 0_CI
       interval = 1.0 / rep_rate
 
+      write(pop_file, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
+        "_salt_", salt, "_population.csv"
+      open(newunit=nunit, file=pop_file)
+
       reploop: do while (curr_maxcount.lt.max_counts)
 
         t = 0.0_CF
@@ -384,7 +392,6 @@ module mc
 
         pulseloop: do while (t.lt.tmax)
           call mc_step(t, .true._CB)
-          tot_acc = tot_acc + n_accepted
           t = t + dt1
           if ((t.gt.(pulse_tmax)).and.(sum(n_i).eq.0_CI)) then
             skip = .true.
@@ -395,7 +402,6 @@ module mc
         if (.not.skip) then
           darkloop: do while (t.lt.interval)
             call mc_step(t, .false._CB)
-            tot_acc = tot_acc + n_accepted
             t = t + dt2
             if (sum(n_i).eq.0_CI) then
               exit darkloop ! start the next rep now, nothing to simulate
@@ -415,9 +421,13 @@ module mc
           write(*,*) salt, rep, curr_maxcount
         end if
 
+        write(nunit, *) rep, sum(n_i, dim=1)
+        write(*, *) salt, rep, sum(n_i, dim=1)
         rep = rep + 1
 
       end do reploop
+
+      close(nunit)
 
       ! max count reached
       write(*, '(i0, 1X, i0, 1X, i0)') salt, rep, curr_maxcount
