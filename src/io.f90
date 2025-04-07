@@ -143,7 +143,7 @@ module io
           "_decay_",&
           trim(adjustl(s_names(i)))
         if (emissive(i)) then
-          emissive_columns(loss_index - 1) = .true.
+          emissive_columns(loss_index) = .true.
         end if
         loss_index = loss_index + 1
       end do
@@ -164,10 +164,15 @@ module io
       integer :: nunit, i
       character(len=30) :: str_fmt
 
-      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       open(newunit=nunit, file=filename)
-      write(nunit, *) (trim(adjustl(labels(i))), i=1,size(labels))
-      write(nunit, *) emissive_columns
+
+      write(str_fmt, '(i0, a)') size(labels), "(a, 1X))"
+      write(nunit, str_fmt) (trim(adjustl(labels(i))), i=1,size(labels))
+
+      write(str_fmt, '(i0, a)') size(labels), "(L, 1X))"
+      write(nunit, str_fmt) (trim(adjustl(str(emissive_columns(i)))), i=1, size(emissive_columns))
+
+      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       do i = 1, n_bins
         write(nunit, str_fmt) bins(i), counts(i, :)
       end do

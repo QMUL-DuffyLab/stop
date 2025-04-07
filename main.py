@@ -76,7 +76,7 @@ if __name__ == "__main__":
     # setup the files
     print("Setting up the input files for the fortran...")
     protein_file, simulation_file = write_fortran_inputs(protein_json,
-            simulation_json, args.protein, args.outdir)
+            simulation_json, args.protein, outdir)
 
     # check the fortran is compiled and up to date
     print("Running make on the fortran...")

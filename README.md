@@ -8,5 +8,5 @@ on a more serious note, this is some fortran code to simulate TCSPC experiments 
 FAQS
 ====
 
-Q: where is the test suite, the continuous integration, all that kind of stuff?
+Q: where is the test suite, the continuous integration, all that kind of stuff?  
 A: what are you, a coward?
