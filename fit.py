@@ -1,4 +1,5 @@
 import os
+import json
 import sympy
 import numpy as np
 import pandas as pd
@@ -29,13 +30,30 @@ def get_histogram(filename):
         sum_emissive = emissive_counts
     return labels, bins, counts, sum_emissive
 
+def get_si_exponent(x):
+    '''
+    return the SI exponent of a number and short/long prefixes
+    '''
+    exponent = np.around(np.floor(np.log10(float(x))) / 3) * 3
+    pref = {-12: ["p", "pico"], -9: ["n", "nano"],
+            -6: ["μ", "micro"], -3: ["m", "milli"], 0: ["", ""],
+            3: ["k", "kilo"], 6: ["M", "mega"], 9: ["G", "giga"],
+            12: ["T", "tera"]}
+    if exponent in pref:
+        return (exponent, pref[exponent])
+    else:
+        return (exponent, [None, None])
+
+
+
 def plot_all(labels, bins, counts, outfile):
     '''
     big plot with all binned decay pathways plotted, including
     ones which would be invisible to a real detector.
     '''
     fig, ax = plt.subplots(figsize=(12,8))
-    for i, l in enumerate(labels):
+    # labels[0] is the bins label. ignore that one
+    for i, l in enumerate(labels[1:]):
         if np.sum(counts[:, i]) > 0:
             plt.plot(bins, counts[:, i], label=l)
     plt.grid(visible=True)
@@ -43,6 +61,7 @@ def plot_all(labels, bins, counts, outfile):
     ax.set_ylabel("counts (unnormalised)")
     ax.legend()
     ax.set_yscale('log')
+    ax.set_ylim([0.1, 1.1 * np.max(counts)])
     fig.tight_layout()
     plt.savefig(outfile)
     plt.close()
@@ -81,7 +100,10 @@ def reconv(X, *args):
     t, irf, taus = X
     ymodel = np.zeros(t.size)
     irf_interp = np.interp(t, t - args[-1], irf)
-    irf_reshaped_norm = irf_interp / np.sum(irf_interp)
+    if np.sum(irf_interp) > 0.0:
+        irf_reshaped_norm = irf_interp / np.sum(irf_interp)
+    else:
+        irf_reshaped_norm = irf_interp
     for i in range(len(args) - 1):
         ymodel += (args[i] * np.exp(-(t) / taus[i]))
     z=Convol(ymodel,irf_reshaped_norm)
@@ -149,18 +171,23 @@ def lifetimes(n, names, bv, err, covar):
     print("tau_int = {} +/- {} ps".format(tau_int.subs(repl), tau_int_err))
     return d
 
-def do_fit(filename, tau_init, irf_file=None,
-        exp=False, pw=0.25, pm=0.4, time_unit="ns"):
-    path = os.path.dirname(filename)
-    (fluence, ext) = os.path.splitext(os.path.basename(filename))
+def do_fit(filename, tau_init, sim_file, irf_file=None):
+    '''
+    wrap all the above functions and do a reconvolution fit on the
+    histogram located at filename. tau_init should be a list of
+    initial time constants to use for curve_fit, sim_file should
+    be the JSON file with the simulation parameters in it.
+    '''
+    path = os.path.splitext(filename)[0]
+    with open(sim_file, "r") as f:
+        sim_json = json.load(f)
+    fluence = sim_json["fluence"]
     
-    '''
-    import the decay data. 
-    if it's experimental it should be a two-column file with the first column
-    being the time and the second either being counts or "normalised" counts.
-    otherwise it's the histogram output by the fortran code: time, ann, pool, pq, q
-    '''
     labels, bins, all_counts, ec = get_histogram(filename)
+
+    all_file = os.path.join(path, f"_all_decays.pdf")
+    plot_all(labels, bins, all_counts, all_file)
+
     ecn = ec / np.max(ec)
     xyn = np.column_stack((bins, ec, ecn))
     max_count_time = xyn[np.argmax(ec), 0]
@@ -218,10 +245,25 @@ def do_fit(filename, tau_init, irf_file=None,
     irf_norm = np.zeros(ec.size)
     # NB: update this. the fortran should output a pulse file
     # and then we read that in
-    sig = pw / 2.355
+
+    sig = sim_json["fwhm"] / 2.355
+    if "mu" in sim_json:
+        pm = sim_json["mu"]
+    else:
+        pm = sim_json["fwhm"] * 2.0
     irf_gen = ((1 / (sig * np.sqrt(2. * np.pi))) *
             np.exp(-(xyn[:, 0] - pm)**2 / (np.sqrt(2.) * sig)**2))
     irf_norm = irf_gen / np.max(irf_gen)
+
+    bmax = np.max(bins)
+    nticks = 4
+    xticks = np.around([i * (bmax) / (nticks - 1) for i in range(nticks)])
+    exponent, prefs = get_si_exponent(bmax)
+    xlabel = "Time" + f"({prefs[0]}s)"
+    xtickround = np.around([i * (bmax / 10**exponent) / (nticks - 1)
+        for i in range(nticks)]).astype(int)
+    xticklabels = [str(i) for i in xtickround]
+    print(xlabel, xticks, xticklabels)
     
     # fit tail with IRF
     fig, ax = plt.subplots(figsize=(12,8))
@@ -234,9 +276,12 @@ def do_fit(filename, tau_init, irf_file=None,
     ax.set_yscale('log')
     ax.set_ylim([1e-5, 1.1])
     ax.set_ylabel("Counts (normalised)")
-    ax.set_xlabel("time")
+    ax.set_xlabel(xlabel)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
     plt.tight_layout()
-    plt.savefig(os.path.join(path, f"{fluence}_tail_fit_{n_exp}.pdf"))
+    fstr = np.format_float_scientific(fluence)
+    plt.savefig(f"{path}_{fstr}_tail_fit_{n_exp}.pdf")
     plt.close()
 
     """
@@ -263,8 +308,8 @@ def do_fit(filename, tau_init, irf_file=None,
     irf_shift = 0.0
     X = (xyn[:, 0], irf_norm, taus)
     p0 = [*best_a, irf_shift]
-    lbs = tuple([0. for _ in range(len(best_a))] + [-max_time])
-    ubs = tuple([np.inf for _ in range(len(best_a))] + [max_time])
+    lbs = tuple([0. for _ in range(len(best_a))] + [-0.5 * max_time])
+    ubs = tuple([np.inf for _ in range(len(best_a))] + [0.5 * max_time])
     bounds = [lbs, ubs]
     popt, pcov = curve_fit(reconv,
             X, xyn[:, 2], p0=p0, sigma=sigma, bounds=bounds)
@@ -291,37 +336,40 @@ def do_fit(filename, tau_init, irf_file=None,
     d["irf_shift_err"] = err[-1]
     d["cutoff"] = cutoff
     print(d)
-
+    
+    exponent, prefs = get_si_exponent(d["tau_amp"])
+    tstr = [f"{x/10**exponent:4.2f}"
+            for x in [d["tau_amp"], d["tau_amp_err"]]]
+    taustr = tstr[0] + r' $ \pm $' + tstr[1] + f"{prefs[0]}s"
     fig, axs = plt.subplots(2, 1, figsize=(12,8))
-    plt.suptitle("{}: ".format(fluence) + r'$ \tau_{\text{amp.}} = $'
-            + "{:4.2f} +/- {:4.2f} ns".format(d["tau_amp"], d["tau_amp_err"]))
+    plt.suptitle("{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
     axs[0].plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
     axs[0].plot(xyn[:, 0], bf, label='fit')
-    plot_file = os.path.join(path, f"{fluence}_reconv_{n_exp}.pdf")
+    plot_file = f"{path}_{fstr}_reconv_{n_exp}.pdf"
     axs[0].legend()
     axs[0].grid(True)
     axs[1].grid(True)
     axs[0].set_ylim([0., 1.1])
     axs[0].set_ylabel("Counts")
-    axs[0].set_xlabel("Time (ns)")
-    axs[0].set_xlim([-1., 10.])
+    ax.set_xlabel(xlabel)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
     axs[1].plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
     axs[1].plot(xyn[:, 0], reconv(X, *popt), label='fit')
     axs[1].set_yscale('log')
     axs[1].set_ylim([1e-2, 1.5])
     axs[1].set_ylabel("Counts")
-    axs[1].set_xlabel("Time (ns)")
-    axs[1].set_xlim([-1., 10.])
+
     fig.tight_layout()
     plt.savefig(plot_file)
     plt.close()
     df = pd.DataFrame(d, index=[0])
-    df_file = os.path.join(f"{path}", f"{fluence}_fit_{n_exp}.csv")
+    df_file = f"{path}_{fstr}_fit_{n_exp}.csv"
     df.to_csv(df_file)
 
-    count_file = os.path.join(f"{path}", f"{fluence}_norm_counts.txt")
+    count_file = f"{path}_{fstr}_norm_counts.txt"
     np.savetxt(count_file, np.column_stack((xyn[:, 0], xyn[:, 2])))
-    fit_file = os.path.join(f"{path}", f"{fluence}_fit_xy_{n_exp}.txt")
+    fit_file = f"{path}_{fstr}_fit_xy_{n_exp}.txt"
     np.savetxt(fit_file, np.column_stack((xyn[:, 0], bf)))
 
     return (d, np.column_stack((xyn[:, 0], xyn[:, 2], bf)))

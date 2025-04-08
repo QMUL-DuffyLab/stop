@@ -44,8 +44,8 @@ program main
 
     write(latt_file, '(a, a, a, i0, a)') trim(adjustl(outdir)),&
       trim(adjustl(lattice_name)), "_lattice_", n_sites, ".txt"
-    write(hist_file, '(a, a, a, i0, a, a)') trim(adjustl(outdir)),&
-      trim(adjustl(protein_name)), "_run_", i, "_reduced_", ".csv"
+    write(hist_file, '(a, a, a, i0, a)') trim(adjustl(outdir)),&
+      trim(adjustl(protein_name)), "_run_", i, ".csv"
 
     if (rank.eq.0) then
       call print_lattice(latt_file, coords, neighbours)

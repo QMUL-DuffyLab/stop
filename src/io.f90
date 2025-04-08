@@ -166,11 +166,11 @@ module io
 
       open(newunit=nunit, file=filename)
 
-      write(str_fmt, '(i0, a)') size(labels), "(a, 1X))"
+      write(str_fmt, '(a, i0, a)') "(", size(labels), "(a, 1X))"
       write(nunit, str_fmt) (trim(adjustl(labels(i))), i=1,size(labels))
 
-      write(str_fmt, '(i0, a)') size(labels), "(L, 1X))"
-      write(nunit, str_fmt) (trim(adjustl(str(emissive_columns(i)))), i=1, size(emissive_columns))
+      write(str_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
+      write(nunit, str_fmt) (emissive_columns(i), i=1, size(emissive_columns))
 
       write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
       do i = 1, n_bins

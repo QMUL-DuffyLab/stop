@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import json
 import itertools
+import fit
 
 def write_fortran_inputs(pj, sj, name, outdir):
     p = pj[name] # get the JSON data for our specific protein
@@ -78,6 +79,7 @@ if __name__ == "__main__":
     protein_file, simulation_file = write_fortran_inputs(protein_json,
             simulation_json, args.protein, outdir)
 
+
     # check the fortran is compiled and up to date
     print("Running make on the fortran...")
     subprocess.run(['make', 'all'], check=True)
@@ -93,3 +95,8 @@ if __name__ == "__main__":
     subprocess.run(['mpirun',
         '-np', f"{n_procs}",
         './stop', protein_file, simulation_file], check=True)
+
+    for i in range(simulation_json["n_repeats"]):
+        hist_file = os.path.join(outdir, f"{args.protein}_run_{i + 1:1d}.csv")
+        stuff = fit.do_fit(hist_file, [4.0e-9], "simulation.json", None)
+        stuff = fit.do_fit(hist_file, [0.5e-9, 4.0e-9], "simulation.json", None)
