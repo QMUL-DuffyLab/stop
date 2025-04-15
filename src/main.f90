@@ -6,6 +6,7 @@ program main
   implicit none
   character(100) :: protein_file, simulation_file, latt_file, hist_file, path
   integer(kind=CI) :: num_procs, rank, mpierr, i, salt
+  real(kind=CF) :: t_start, t_end
 
   call MPI_Init(mpierr)
   call MPI_Comm_rank(MPI_COMM_WORLD, rank,      mpierr)
@@ -20,6 +21,8 @@ program main
   call generate_lattice(lattice_name, n_sites)
   call generate_histogram()
   call construct_pulse(fwhm, dt1, fluence)
+
+  call cpu_time(t_start)
 
   do i = 1, n_repeats
 
@@ -53,6 +56,9 @@ program main
     end if
 
   end do
+
+  call cpu_time(t_end)
+  write(*, '(a, F8.3, a)') "Time elapsed: ", t_end - t_start, " seconds."
 
   call MPI_Finalize(mpierr)
 

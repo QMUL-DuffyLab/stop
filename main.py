@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import json
 import itertools
+import numpy as np
 import fit
 
 def write_fortran_inputs(pj, sj, name, outdir):
@@ -58,7 +59,6 @@ if __name__ == "__main__":
             help="Number of MPI processes to use (default is whatever os.cpu_count() returns")
 
     args = parser.parse_args()
-    os.makedirs(args.outdir, exist_ok=True)
 
     with open("protein.json", "r") as f:
         protein_json = json.load(f)
@@ -73,7 +73,11 @@ if __name__ == "__main__":
 
     # fortran will not know about OS directory separators, so
     # just add an extra one at the end of the path for it
-    outdir = os.path.join(args.outdir, "")
+    fstr = np.format_float_scientific(simulation_json['fluence'])
+    outdir = os.path.join(args.outdir,
+            f"{args.protein}_{fstr}", "")
+    os.makedirs(outdir, exist_ok=True)
+
     # setup the files
     print("Setting up the input files for the fortran...")
     protein_file, simulation_file = write_fortran_inputs(protein_json,

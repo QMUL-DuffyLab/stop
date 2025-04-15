@@ -12,7 +12,7 @@ OBJECTS = $(patsubst %.f90, %.o, $(SOURCES))
 
 DEBUG = 0
 ifeq (${DEBUG}, 1)
-	FLAGS += -gdwarf-3
+	FLAGS += -gdwarf-3 -g
 else
 	FLAGS += -O2
 endif

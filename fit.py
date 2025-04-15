@@ -185,7 +185,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     
     labels, bins, all_counts, ec = get_histogram(filename)
 
-    all_file = os.path.join(path, f"_all_decays.pdf")
+    all_file = f"{path}_all_decays.pdf"
     plot_all(labels, bins, all_counts, all_file)
 
     ecn = ec / np.max(ec)
@@ -342,7 +342,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
             for x in [d["tau_amp"], d["tau_amp_err"]]]
     taustr = tstr[0] + r' $ \pm $' + tstr[1] + f"{prefs[0]}s"
     fig, axs = plt.subplots(2, 1, figsize=(12,8))
-    plt.suptitle("{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
+    plt.suptitle(f"{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
     axs[0].plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
     axs[0].plot(xyn[:, 0], bf, label='fit')
     plot_file = f"{path}_{fstr}_reconv_{n_exp}.pdf"

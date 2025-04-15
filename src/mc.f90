@@ -5,6 +5,7 @@ module mc
   implicit none
   private
   logical(kind=CB) :: possible(6) ! 6 types of moves considered
+  logical(kind=CB) :: bad_proposal
   integer(kind=CI), public :: n_accepted(6)
   real(kind=CF), allocatable, public :: pulse(:)
   real(kind=CF), public :: mu, pulse_tmax
@@ -117,6 +118,10 @@ module mc
       integer(kind=CI) :: i
       integer(kind=CI), allocatable :: ind(:)
       ind = pack([(i, i = 1_CI, size(arr))], arr)
+      if (size(ind).eq.0) then
+        write(*, *) "size(ind) = 0. arr = ", arr
+        stop
+      end if
       call random_number(r)
       i = ind(ceiling(r * size(ind)))
       if ((i.lt.1_CI).or.(i.gt.size(arr))) then
@@ -180,7 +185,7 @@ module mc
         possible(2) = .true._CB
       end if
       ! any non-zero population allows for hopping, and decay
-      ! (3, 4, 5)
+      ! (3, 5)
       if (any(n_i(site, :).gt.0)) then
         possible(3) = .true._CB
         possible(5) = .true._CB
@@ -207,6 +212,12 @@ module mc
       call zero_move(cm)
       call possible_moves(i, ft)
       ! indices where possible is true
+      if (.not.any(possible)) then
+        ! we should never get here. why do we get here?
+        bad_proposal = .true.
+        return
+      end if
+
       cm%mt = rand_true(possible)
       cm%isi = i
       cm%fsi = i
@@ -314,26 +325,29 @@ module mc
         n_i(cm%isi, cm%fst) = n_i(cm%isi, cm%fst) - 1
         n_i(cm%isi, a) = n_i(cm%isi, a) + 1
       case default
-        write(*, *) "something wrong in do_cm!"
+        write(*, *) "something wrong in do_move!", cm%mt
         stop
       end select
     end subroutine do_move
 
-    subroutine mc_step(t, bin)
-      real(kind=CF) :: ft, prob, r, t
+    subroutine mc_step(t, dt, bin)
+      real(kind=CF) :: ft, prob, r, t, dt
       logical(kind=CB) :: bin
       integer(kind=CI) :: pind, i, j, s, n_poss, ibin
 
       n_accepted = 0_CI
+      ft = 0.0_CF
 
       if (t.le.2.0*mu) then
-        pind = int(t / dt1) + 1
+        pind = int(t / dt) + 1
         if (pind.le.size(pulse)) then
           ft = pulse(pind)
         end if
       end if
 
       do i = 1, n_sites
+        bad_proposal = .false.
+
         s = rand_int(n_sites)
         call possible_moves(s, ft)
 
@@ -342,17 +356,30 @@ module mc
           cycle
         end if
 
-        do j = 1, n_poss
-          call possible_moves(s, ft)
-          if (.not.any(possible)) then
-            cycle
+        moveloop: do j = 1, n_poss
+
+          call propose(s, ft)
+
+          if (bad_proposal) then
+            write(*, *) "bad proposal. why?"
+            write(*, *) "site = ", s
+            write(*, *) "ni = ", n_i(i, :)
+            write(*, *) "time = ", t
+            write(*, *) "dt = ", dt
+            write(*, *) "possible = ", possible
+            write(*, *) "any(possible)", any(possible)
+            write(*, *) "not(any(possible))", (.not.any(possible))
+            write(*, *) "n_poss", n_poss
+            stop
           end if
-          call propose(i, ft)
-          prob = cm%rate * dt1 * exp(-1.0 * cm%rate * dt1)
+
+          prob = cm%rate * dt * exp(-1.0_CF * cm%rate * dt)
           call random_number(r)
+
           if (r.lt.prob) then
             n_accepted(cm%mt) = n_accepted(cm%mt) + 1
             call do_move()
+
             if (bin.and.cm%loss_index.gt.0) then
               ibin = ceiling(t / binwidth)
               if (ibin.eq.0) then
@@ -361,7 +388,15 @@ module mc
               counts(ibin, cm%loss_index) = counts(ibin, cm%loss_index) + 1
             end if
           end if
-        end do
+
+          ! check if any more moves are possible now
+          call possible_moves(s, ft)
+
+          if (.not.any(possible)) then
+            exit moveloop
+          end if
+
+        end do moveloop
 
       end do
     end subroutine mc_step
@@ -369,6 +404,7 @@ module mc
     subroutine do_run(salt, max_counts, out_file_path)
       integer(kind=CI), intent(in) :: salt, max_counts
       real(kind=CF) :: t, interval
+      integer(kind=CI) :: tot_accepted(6)
       integer(kind=CI) :: i, j, curr_maxcount, rep, nunit
       integer(kind=CI), allocatable :: ec(:)
       character(100) :: out_file_path, outfile, pop_file
@@ -376,6 +412,7 @@ module mc
 
       call init_random(salt)
       counts = 0_CI
+      tot_accepted = 0_CI
 
       ec = pack([(i, i = 1_CI, size(emissive_columns))], emissive_columns)
 
@@ -393,7 +430,8 @@ module mc
         skip = .false.
 
         pulseloop: do while (t.lt.tmax)
-          call mc_step(t, .true._CB)
+          call mc_step(t, dt1, .true._CB)
+          tot_accepted = tot_accepted + n_accepted
           t = t + dt1
           if ((t.gt.(pulse_tmax)).and.(sum(n_i).eq.0_CI)) then
             skip = .true.
@@ -403,7 +441,7 @@ module mc
 
         if (.not.skip) then
           darkloop: do while (t.lt.interval)
-            call mc_step(t, .false._CB)
+            call mc_step(t, dt2, .false._CB)
             t = t + dt2
             if (sum(n_i).eq.0_CI) then
               exit darkloop ! start the next rep now, nothing to simulate
@@ -419,12 +457,10 @@ module mc
               end if
             end do
           end do
-          ! curr_maxcount = maxval(counts(:, ec))
           write(*,*) salt, rep, curr_maxcount
         end if
 
-        write(nunit, *) rep, sum(n_i, dim=1)
-        ! write(*, *) salt, rep, sum(n_i, dim=1)
+        write(nunit, *) rep, sum(n_i, dim=1), t
         rep = rep + 1
 
       end do reploop
