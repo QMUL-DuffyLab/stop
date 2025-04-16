@@ -44,23 +44,44 @@ def get_si_exponent(x):
     else:
         return (exponent, [None, None])
 
+def plot_setup(bins, nticks, norm_counts=True):
+    '''
+    set up the figure and axes since they're gonna be the
+    same for all the plots we do here
+    '''
+    bmax = np.max(bins)
+    xticks = [i * (bmax) / (nticks - 1) for i in range(nticks)]
+    exponent, prefs = get_si_exponent(bmax)
+    xlabel = "Time" + f"({prefs[0]}s)"
+    xtickround = np.around([i * (bmax / 10**exponent) / (nticks - 1)
+        for i in range(nticks)]).astype(int)
+    xticklabels = [str(i) for i in xtickround]
 
+    fig, ax = plt.subplots(figsize=(12,8))
+    plt.grid(visible=True)
+    ax.set_yscale('log')
+    if norm_counts:
+        ax.set_ylim([1e-5, 1.1])
+        ax.set_ylabel("Counts (normalised)")
+    else:
+        ax.set_ylabel("Counts")
+    ax.set_xlabel(xlabel)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+    return fig, ax
+    
 
 def plot_all(labels, bins, counts, outfile):
     '''
     big plot with all binned decay pathways plotted, including
     ones which would be invisible to a real detector.
     '''
-    fig, ax = plt.subplots(figsize=(12,8))
+    fig, ax = plot_setup(bins, 4, False)
     # labels[0] is the bins label. ignore that one
     for i, l in enumerate(labels[1:]):
         if np.sum(counts[:, i]) > 0:
             plt.plot(bins, counts[:, i], label=l)
-    plt.grid(visible=True)
-    ax.set_xlabel("time")
-    ax.set_ylabel("counts (unnormalised)")
     ax.legend()
-    ax.set_yscale('log')
     ax.set_ylim([0.1, 1.1 * np.max(counts)])
     fig.tight_layout()
     plt.savefig(outfile)
@@ -166,9 +187,8 @@ def lifetimes(n, names, bv, err, covar):
     d['tau_amp_err'] = tau_amp_err
     d['tau_int'] = tau_int.subs(repl)
     d['tau_int_err'] = tau_int_err
-    print("n_exp = {:d}".format(n))
-    print("tau_amp = {} +/- {} ps".format(tau_amp.subs(repl), tau_amp_err))
-    print("tau_int = {} +/- {} ps".format(tau_int.subs(repl), tau_int_err))
+    print("tau_amp = {} +/- {} s".format(tau_amp.subs(repl), tau_amp_err))
+    print("tau_int = {} +/- {} s".format(tau_int.subs(repl), tau_int_err))
     return d
 
 def do_fit(filename, tau_init, sim_file, irf_file=None):
@@ -210,6 +230,9 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
         sigma[i] = np.sqrt(1. / count + 1. / max_count)
         
     n_exp = len(tau_init)
+    print()
+    print(f"doing fit: n_exp = {n_exp}")
+
     p0 = [*[1./n_exp for _ in range(n_exp)], *tau_init]
     names = [] # these will be needed to construct a dataframe later
     for i in range(n_exp):
@@ -227,10 +250,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     y = tail[:, 2]
     tail_popt, tail_pcov = curve_fit(exp_model, x, y, p0=p0,
             sigma=tail_sigma, bounds=bounds)
-    print("popt tail: ",tail_popt)
-    print(tail_pcov)
     tail_err = np.sqrt(np.diag(tail_pcov))
-    print("errors:", tail_err)
     
     best_t = list(tail_popt[len(tail_popt)//2:])
     print("Time constant(s) from tail fit = ", best_t)
@@ -255,30 +275,13 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
             np.exp(-(xyn[:, 0] - pm)**2 / (np.sqrt(2.) * sig)**2))
     irf_norm = irf_gen / np.max(irf_gen)
 
-    bmax = np.max(bins)
-    nticks = 4
-    xticks = np.around([i * (bmax) / (nticks - 1) for i in range(nticks)])
-    exponent, prefs = get_si_exponent(bmax)
-    xlabel = "Time" + f"({prefs[0]}s)"
-    xtickround = np.around([i * (bmax / 10**exponent) / (nticks - 1)
-        for i in range(nticks)]).astype(int)
-    xticklabels = [str(i) for i in xtickround]
-    print(xlabel, xticks, xticklabels)
-    
     # fit tail with IRF
-    fig, ax = plt.subplots(figsize=(12,8))
+    fig, ax = plot_setup(bins, 4, True)
     plt.plot(x, y, ls='--', marker='o', label='Decays')
     plt.plot(x, exp_model(x, *tail_popt),
             label=r'Fit: $ \tau_i = $' + f"{best_t}")
     plt.plot(xyn[:, 0] - cutoff, irf_norm, label='IRF')
     plt.legend(fontsize=32)
-    plt.grid()
-    ax.set_yscale('log')
-    ax.set_ylim([1e-5, 1.1])
-    ax.set_ylabel("Counts (normalised)")
-    ax.set_xlabel(xlabel)
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xticklabels)
     plt.tight_layout()
     fstr = np.format_float_scientific(fluence)
     plt.savefig(f"{path}_{fstr}_tail_fit_{n_exp}.pdf")
@@ -316,11 +319,9 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     bf = reconv(X, *popt)
 
     print("best fit for amps, irf_shift: ", popt)
-    print("cov: ", pcov)
 
     # now set up the lifetime calculations
     err = np.sqrt(np.diag(pcov))
-    print("err: ", err)
     best_values = dict(zip(names, np.concatenate((popt[:n_exp], best_t))))
     errors = dict(zip(names, np.concatenate((err[:n_exp], tail_err[n_exp:]))))
     # amplitudes and time constants are fitted separately
@@ -335,34 +336,21 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     d["irf_shift"] = popt[-1]
     d["irf_shift_err"] = err[-1]
     d["cutoff"] = cutoff
-    print(d)
     
     exponent, prefs = get_si_exponent(d["tau_amp"])
     tstr = [f"{x/10**exponent:4.2f}"
             for x in [d["tau_amp"], d["tau_amp_err"]]]
     taustr = tstr[0] + r' $ \pm $' + tstr[1] + f"{prefs[0]}s"
-    fig, axs = plt.subplots(2, 1, figsize=(12,8))
-    plt.suptitle(f"{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
-    axs[0].plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
-    axs[0].plot(xyn[:, 0], bf, label='fit')
-    plot_file = f"{path}_{fstr}_reconv_{n_exp}.pdf"
-    axs[0].legend()
-    axs[0].grid(True)
-    axs[1].grid(True)
-    axs[0].set_ylim([0., 1.1])
-    axs[0].set_ylabel("Counts")
-    ax.set_xlabel(xlabel)
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xticklabels)
-    axs[1].plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
-    axs[1].plot(xyn[:, 0], reconv(X, *popt), label='fit')
-    axs[1].set_yscale('log')
-    axs[1].set_ylim([1e-2, 1.5])
-    axs[1].set_ylabel("Counts")
 
+    fig, ax = plot_setup(bins, 4, True)
+    plt.suptitle(f"{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
+    plot_file = f"{path}_{fstr}_reconv_{n_exp}.pdf"
+    ax.plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
+    ax.plot(xyn[:, 0], reconv(X, *popt), label='fit')
     fig.tight_layout()
     plt.savefig(plot_file)
     plt.close()
+
     df = pd.DataFrame(d, index=[0])
     df_file = f"{path}_{fstr}_fit_{n_exp}.csv"
     df.to_csv(df_file)

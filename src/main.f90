@@ -22,7 +22,9 @@ program main
   call generate_histogram()
   call construct_pulse(fwhm, dt1, fluence)
 
-  call cpu_time(t_start)
+  if (rank.eq.0) then
+    call cpu_time(t_start)
+  end if
 
   do i = 1, n_repeats
 
@@ -57,8 +59,10 @@ program main
 
   end do
 
-  call cpu_time(t_end)
-  write(*, '(a, F8.3, a)') "Time elapsed: ", t_end - t_start, " seconds."
+  if (rank.eq.0) then
+    call cpu_time(t_end)
+    write(*, '(a, F8.3, a)') "Time elapsed: ", t_end - t_start, "s"
+  end if
 
   call MPI_Finalize(mpierr)
 

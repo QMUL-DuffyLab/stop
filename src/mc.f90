@@ -414,7 +414,10 @@ module mc
       counts = 0_CI
       tot_accepted = 0_CI
 
-      ec = pack([(i, i = 1_CI, size(emissive_columns))], emissive_columns)
+      ! first column in emissive columns isn't a real one -
+      ! it's for the output file. could maybe replace this
+      ! with just emissive??
+      ec = pack([(i, i = 1_CI, size(emissive_columns) - 1)], emissive_columns(2:))
 
       rep = 1_CI
       curr_maxcount = 0_CI
@@ -435,7 +438,7 @@ module mc
           t = t + dt1
           if ((t.gt.(pulse_tmax)).and.(sum(n_i).eq.0_CI)) then
             skip = .true.
-            exit pulseloop ! start the next rep now, nothing to simulate
+            exit pulseloop ! start next rep now, nothing to simulate
           end if
         end do pulseloop
 
@@ -444,7 +447,7 @@ module mc
             call mc_step(t, dt2, .false._CB)
             t = t + dt2
             if (sum(n_i).eq.0_CI) then
-              exit darkloop ! start the next rep now, nothing to simulate
+              exit darkloop ! start next rep now, nothing to simulate
             end if
           end do darkloop
         end if
@@ -457,7 +460,7 @@ module mc
               end if
             end do
           end do
-          write(*,*) salt, rep, curr_maxcount
+          write (*, *) salt, rep, curr_maxcount, ec
         end if
 
         write(nunit, *) rep, sum(n_i, dim=1), t
@@ -468,7 +471,8 @@ module mc
       close(nunit)
 
       ! max count reached
-      write(*, '(i0, 1X, i0, 1X, i0)') salt, rep, curr_maxcount
+      write(*, '(a, i0, a, i0, a, i0)') "Process with salt ", salt,&
+        " finished at rep ", rep, "with max count ", curr_maxcount
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)
