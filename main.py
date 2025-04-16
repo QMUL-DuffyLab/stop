@@ -71,6 +71,7 @@ if __name__ == "__main__":
     else:
         raise KeyError("Invalid protein choice. Add it to protein.json!")
 
+    tau_init = np.diagonal(protein["intra"])
     # fortran will not know about OS directory separators, so
     # just add an extra one at the end of the path for it
     fstr = np.format_float_scientific(simulation_json['fluence'])
@@ -102,5 +103,5 @@ if __name__ == "__main__":
 
     for i in range(simulation_json["n_repeats"]):
         hist_file = os.path.join(outdir, f"{args.protein}_run_{i + 1:1d}.csv")
-        stuff = fit.do_fit(hist_file, [4.0e-9], "simulation.json", None)
-        stuff = fit.do_fit(hist_file, [0.5e-9, 4.0e-9], "simulation.json", None)
+        for j in range(len(tau_init)):
+            stuff = fit.do_fit(hist_file, tau_init[:j + 1], "simulation.json", None)

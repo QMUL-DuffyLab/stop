@@ -34,9 +34,10 @@ def get_si_exponent(x):
     '''
     return the SI exponent of a number and short/long prefixes
     '''
+    # "μ" doesn't work with latex
     exponent = np.around(np.floor(np.log10(float(x))) / 3) * 3
     pref = {-12: ["p", "pico"], -9: ["n", "nano"],
-            -6: ["μ", "micro"], -3: ["m", "milli"], 0: ["", ""],
+            -6: ["mu", "micro"], -3: ["m", "milli"], 0: ["", ""],
             3: ["k", "kilo"], 6: ["M", "mega"], 9: ["G", "giga"],
             12: ["T", "tera"]}
     if exponent in pref:
