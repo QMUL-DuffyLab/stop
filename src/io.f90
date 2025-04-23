@@ -9,7 +9,8 @@ module io
   character(len=10), public :: protein_name, lattice_name
   character(len=30), allocatable :: labels(:)
   character(len=100), public :: outdir
-  integer(kind=CI), public :: n_p, n_s, n_sites, n_bins, n_counts, n_repeats
+  integer(kind=CI), public :: n_p, n_s, n_sites, n_bins,&
+    n_counts, n_repeats, burn_reps
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
@@ -93,6 +94,7 @@ module io
      read(nunit, *) n_sites
      read(nunit, *) lattice_name
      read(nunit, *) rep_rate
+     read(nunit, *) burn_reps
      read(nunit, *) tmax
      read(nunit, *) dt1
      read(nunit, *) dt2

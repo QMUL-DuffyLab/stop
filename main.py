@@ -36,6 +36,7 @@ def write_fortran_inputs(pj, sj, name, outdir):
         f.write(f"{sj['n_sites']}\n")
         f.write(f"{sj['lattice']}\n")
         f.write(f"{sj['rep_rate']}\n")
+        f.write(f"{sj['burn_reps']}\n")
         f.write(f"{sj['tmax']}\n")
         f.write(f"{sj['dt1']}\n")
         f.write(f"{sj['dt2']}\n")

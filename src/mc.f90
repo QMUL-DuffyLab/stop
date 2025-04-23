@@ -408,7 +408,7 @@ module mc
       integer(kind=CI) :: i, j, curr_maxcount, rep, nunit
       integer(kind=CI), allocatable :: ec(:)
       character(100) :: out_file_path, outfile, pop_file
-      logical :: skip
+      logical(kind=CB) :: skip, bin_pulse
 
       call init_random(salt)
       counts = 0_CI
@@ -429,11 +429,16 @@ module mc
 
       reploop: do while (curr_maxcount.lt.max_counts)
 
+        bin_pulse = .true.
+        if (rep.lt.burn_reps) then
+          bin_pulse = .false.
+        end if
+
         t = 0.0_CF
         skip = .false.
 
         pulseloop: do while (t.lt.tmax)
-          call mc_step(t, dt1, .true._CB)
+          call mc_step(t, dt1, bin_pulse)
           tot_accepted = tot_accepted + n_accepted
           t = t + dt1
           if ((t.gt.(pulse_tmax)).and.(sum(n_i).eq.0_CI)) then
