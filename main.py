@@ -72,7 +72,6 @@ if __name__ == "__main__":
     else:
         raise KeyError("Invalid protein choice. Add it to protein.json!")
 
-    tau_init = np.diagonal(protein["intra"])
     # fortran will not know about OS directory separators, so
     # just add an extra one at the end of the path for it
     fstr = np.format_float_scientific(simulation_json['fluence'])
@@ -102,6 +101,7 @@ if __name__ == "__main__":
         '-np', f"{n_procs}",
         './stop', protein_file, simulation_file], check=True)
 
+    tau_init = [protein["intra"][0][0], 500e-12, 20e-12]
     for i in range(simulation_json["n_repeats"]):
         hist_file = os.path.join(outdir, f"{args.protein}_run_{i + 1:1d}.csv")
         for j in range(len(tau_init)):

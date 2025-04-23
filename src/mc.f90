@@ -213,7 +213,7 @@ module mc
       call possible_moves(i, ft)
       ! indices where possible is true
       if (.not.any(possible)) then
-        ! we should never get here. why do we get here?
+        ! something has gone badly wrong somewhere
         bad_proposal = .true.
         return
       end if
@@ -283,7 +283,7 @@ module mc
         ! all annihilation events go in one of them to make counting
         ! easier. if we're only generating one column per annihilation
         ! pair then the loss index calculation will have to be modified
-        ! here - come back to this if i end up doing that!
+        ! here - come back to this if so
         if (s.gt.s2) then
           n_eff = s
           s = s2
