@@ -1,6 +1,6 @@
 {
   "fwhm": 50e-12,
-  "fluence": 1.8e16,
+  "fluence": 2.0e16,
   "n_sites": 200,
   "lattice": "hex",
   "rep_rate": 26.6e6,
