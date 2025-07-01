@@ -119,7 +119,7 @@ module io
 
     subroutine generate_histogram()
       integer :: n_losses, i, j, loss_index
-      n_losses = n_s * (2 + n_s)
+      n_losses = n_s * (4 + n_s)
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
       allocate(labels(n_losses + 1))
@@ -135,6 +135,13 @@ module io
       loss_index = 2
       do i = 1, n_s
         write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
+          "_gen_",&
+          trim(adjustl(s_names(i)))
+        loss_index = loss_index + 1
+      end do
+
+      do i = 1, n_s
+        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
           "_se_",&
           trim(adjustl(s_names(i)))
         loss_index = loss_index + 1
@@ -147,6 +154,13 @@ module io
         if (emissive(i)) then
           emissive_columns(loss_index) = .true.
         end if
+        loss_index = loss_index + 1
+      end do
+
+      do i = 1, n_s
+        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
+          "_hop_",&
+          trim(adjustl(s_names(i)))
         loss_index = loss_index + 1
       end do
 
@@ -174,7 +188,7 @@ module io
       write(str_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
       write(nunit, str_fmt) (emissive_columns(i), i=1, size(emissive_columns))
 
-      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 2), "(1X, I0))"
+      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 4), "(1X, I0))"
       do i = 1, n_bins
         write(nunit, str_fmt) bins(i), counts(i, :)
       end do

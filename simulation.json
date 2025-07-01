@@ -1,14 +1,14 @@
 {
-  "fwhm": 250e-12,
-  "fluence": 3.0e14,
+  "fwhm": 50e-12,
+  "fluence": 1.8e16,
   "n_sites": 200,
   "lattice": "hex",
   "rep_rate": 26.6e6,
-  "burn_reps": 500,
+  "burn_reps": 50,
   "tmax": 15e-9,
   "dt1": 1e-12,
   "dt2": 1e-9,
   "binwidth": 25e-12,
-  "n_counts": 10000,
+  "n_counts": 2500,
   "n_repeats": 2
 }

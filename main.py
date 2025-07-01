@@ -101,7 +101,7 @@ if __name__ == "__main__":
         '-np', f"{n_procs}",
         './stop', protein_file, simulation_file], check=True)
 
-    tau_init = [protein["intra"][0][0], 500e-12, 20e-12]
+    tau_init = [protein["intra"][0][0], np.min(protein["ann"]), 500e-12]
     for i in range(simulation_json["n_repeats"]):
         hist_file = os.path.join(outdir, f"{args.protein}_run_{i + 1:1d}.csv")
         for j in range(len(tau_init)):

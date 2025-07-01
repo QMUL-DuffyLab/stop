@@ -61,7 +61,7 @@ program main
 
   if (rank.eq.0) then
     call cpu_time(t_end)
-    write(*, '(a, G0.3, a)') "Time elapsed: ", t_end - t_start, "s"
+    write(*, '(a, G0.6, a)') "Time elapsed: ", t_end - t_start, "s"
   end if
 
   call MPI_Finalize(mpierr)

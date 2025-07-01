@@ -232,6 +232,7 @@ module mc
         cm%rate = ft * xsec(s) * (n_tot(p) - n_i(i, s)) / n_tot(p)
         cm%ist = s
         cm%fst = s
+        cm%loss_index = s
       case (2)
         ! stimulated emission
         s = rand_nonzero_real(xsec) ! which state is it
@@ -241,7 +242,7 @@ module mc
         cm%fst = s
         ! this assumes there's only one protein in the system
         ! i.e. it'll need changing if there are multiple proteins
-        cm%loss_index = s
+        cm%loss_index = n_s + s
       case (3)
         ! hop
         s = rand_nonzero_int(n_i(i, :))
@@ -249,12 +250,14 @@ module mc
         p = which_p(s)
         cm%rate = n_i(i, s) * hop(s)
         if (n_i(i, s).lt.n_i(nn, s)) then
-          cm%rate = cm%rate * (n_i(i, s) * n_thermal(p) - n_i(nn, s)) /&
+          ! entropic penalty for hopping to a higher-occupied site
+          cm%rate = cm%rate * (n_i(i, s) * (n_thermal(p) - n_i(nn, s))) /&
           ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(i, s) + 1))
         end if
         cm%ist = s
         cm%fsi = nn
         cm%fst = s
+        cm%loss_index = (3 * n_s) + s
       case (4)
         ! transfer
         s = rand_nonzero_int(n_i(i, :))
@@ -272,7 +275,7 @@ module mc
         cm%ist = s
         cm%fst = s
         cm%emissive = emissive(s)
-        cm%loss_index = n_s + s
+        cm%loss_index = (2 * n_s) + s
       case (6)
         ! annihilation
         s = rand_nonzero_int(n_i(i, :))
@@ -295,7 +298,7 @@ module mc
           n_eff = n_i(i, s) + n_i(i, s2)
           cm%rate = ann(s, s2) * (n_eff * (n_eff - 1)) / 2.0
         end if
-        cm%loss_index = (2 + (s - 1)) * n_s + s2
+        cm%loss_index = (4 + (s - 1)) * n_s + s2
         cm%ist = s
         cm%fst = s2
       case default
@@ -478,6 +481,9 @@ module mc
       ! max count reached
       write(*, '(a, i0, a, i0, a, i0)') "Process with salt ", salt,&
         " finished at rep ", rep, "with max count ", curr_maxcount
+      write(*, '(a, i0, a, G0.6)') "Total generated: ",&
+        sum(counts(:, 1:n_s)), ", generated per rep per protein = ",&
+        real(sum(counts(:, 1:n_s))) / (rep * n_sites)
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)

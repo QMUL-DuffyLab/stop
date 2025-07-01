@@ -9,7 +9,7 @@
   "dist": [[false]],
   "n_tot": [100],
   "n_thermal": [100],
-  "hop": [0.0],
+  "hop": [10e-12],
   "intra": [[4e-9]],
   "ann": [[16e-12]],
   "ann_remainder": [[1]],
