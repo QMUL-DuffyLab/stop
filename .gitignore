@@ -3,5 +3,5 @@
 stop
 out/*
 in/*
-*.ipynb
+*.ipynb*
 *pycache*

@@ -255,6 +255,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     
     best_t = list(tail_popt[len(tail_popt)//2:])
     print("Time constant(s) from tail fit = ", best_t)
+    print("Errors from tail fit = ", tail_err)
     best_a = list(tail_popt[:len(tail_popt)//2])
     print("Amplitude(s) from tail fit = ", best_a)
     # need this to plot the tail fit later

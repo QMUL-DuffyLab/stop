@@ -72,12 +72,22 @@ if __name__ == "__main__":
     else:
         raise KeyError("Invalid protein choice. Add it to protein.json!")
 
+
+    detergent = True
+    for h in protein['hop']:
+        if h > 0.0:
+            detergent = False
+    if detergent:
+        connected = "detergent"
+    else:
+        connected = "aggregate"
     # fortran will not know about OS directory separators, so
     # just add an extra one at the end of the path for it
     fstr = np.format_float_scientific(simulation_json['fluence'])
     outdir = os.path.join(args.outdir,
-            f"{args.protein}_{fstr}", "")
+            f"{args.protein}", connected, f"fluence_{fstr}", "")
     os.makedirs(outdir, exist_ok=True)
+    print(f"Output directory: {outdir}")
 
     # setup the files
     print("Setting up the input files for the fortran...")

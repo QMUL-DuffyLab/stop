@@ -252,14 +252,8 @@ module mc
         cm%rate = n_i(i, s) * hop(s)
         if (n_i(i, s).lt.n_i(nn, s)) then
           ! entropic penalty for hopping to a higher-occupied site
-          ! write(*, *) "hop: inital rate = ", cm%rate
-          ! write(*, *) "site number ", i, "neighbour ", nn
-          ! write(*, *) "site pop ", n_i(i, s), "neighbour pop ", n_i(nn, s)
-          ! write(*, *) "multiplier = ", (n_i(i, s) * (n_thermal(p) - n_i(nn, s))) /&
-          ! ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(i, s) + 1))
           cm%rate = cm%rate * (n_i(i, s) * (n_thermal(p) - n_i(nn, s))) /&
           ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(i, s) + 1))
-          ! write(*, *) "hop: after entropy barrier = ", cm%rate
         end if
         cm%ist = s
         cm%fsi = nn
