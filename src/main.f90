@@ -4,7 +4,7 @@ program main
   use lattice
   use mc
   implicit none
-  character(100) :: protein_file, simulation_file, latt_file, hist_file, path
+  character(200) :: protein_file, simulation_file, latt_file, hist_file, path
   integer(kind=CI) :: num_procs, rank, mpierr, i, salt
   real(kind=CF) :: t_start, t_end
 

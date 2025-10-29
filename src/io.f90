@@ -6,9 +6,9 @@ module io
   integer, parameter, public :: CF = c_double
   integer, parameter, public :: CI = c_int
   integer, parameter, public :: CB = c_bool
-  character(len=10), public :: protein_name, lattice_name
-  character(len=30), allocatable :: labels(:)
-  character(len=100), public :: outdir
+  character(len=100), public :: protein_name, lattice_name
+  character(len=50), allocatable :: labels(:)
+  character(len=200), public :: outdir
   integer(kind=CI), public :: n_p, n_s, n_sites, n_bins,&
     n_counts, n_repeats, burn_reps
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
@@ -31,7 +31,7 @@ module io
       ! run some python to set the params in a JSON file and print
       ! them out into a separate file for the fortran at runtime.
       character(len=*), intent(in) :: filename
-      integer(kind=CI) :: nunit
+      integer(kind=CI) :: nunit, i
       logical(kind=CB), allocatable :: dist_temp(:)
       integer(kind=CI), allocatable :: ann_rem_temp(:)
       real(kind=CF), allocatable :: intra_temp(:), ann_temp(:)
@@ -73,10 +73,35 @@ module io
       read(nunit, *) xsec
       read(nunit, *) emissive
 
-      dist          = reshape(dist_temp,    (/ n_s, n_s /))
-      intra         = reshape(intra_temp,   (/ n_s, n_s /))
-      ann           = reshape(ann_temp,     (/ n_s, n_s /))
-      ann_remainder = reshape(ann_rem_temp, (/ n_s, n_s /))
+      write(*, *) "reading in rates"
+      write(*, *) "----------------"
+      write(*, *)
+      write(*, *) "hop = ", hop
+      write(*, *) "intra_temp = ", intra_temp
+      write(*, *) "ann_temp = ", ann_temp
+      write(*, *) "ann_rem_temp = ", ann_rem_temp
+
+      ! fortran is column-major
+      dist          = transpose(reshape(dist_temp,    (/ n_s, n_s /)))
+      intra         = transpose(reshape(intra_temp,   (/ n_s, n_s /)))
+      ann           = transpose(reshape(ann_temp,     (/ n_s, n_s /)))
+      ann_remainder = transpose(reshape(ann_rem_temp, (/ n_s, n_s /)))
+
+      write(*, *)
+      write(*, *) "intra"
+      do i = 1, n_s
+        write(*, *) intra(i, :)
+      end do
+      write(*, *)
+      write(*, *) "ann"
+      do i = 1, n_s
+        write(*, *) ann(i, :)
+      end do
+      write(*, *)
+      write(*, *) "ann remainder"
+      do i = 1, n_s
+        write(*, *) ann_remainder(i, :)
+      end do
 
       hop = 1.0_CF / hop
       intra = 1.0_CF / intra
@@ -119,7 +144,7 @@ module io
 
     subroutine generate_histogram()
       integer :: n_losses, i, j, loss_index
-      n_losses = n_s * (4 + n_s)
+      n_losses = n_s * (4 + 2 * n_s)
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
       allocate(labels(n_losses + 1))
@@ -134,23 +159,22 @@ module io
 
       loss_index = 2
       do i = 1, n_s
-        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
-          "_gen_",&
-          trim(adjustl(s_names(i)))
+        write(labels(loss_index), '(a, a)') "gen_", trim(adjustl(s_names(i)))
         loss_index = loss_index + 1
       end do
 
       do i = 1, n_s
-        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
-          "_se_",&
-          trim(adjustl(s_names(i)))
+        write(labels(loss_index), '(a, a)') "se_", trim(adjustl(s_names(i)))
         loss_index = loss_index + 1
       end do
 
       do i = 1, n_s
-        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
-          "_decay_",&
-          trim(adjustl(s_names(i)))
+        write(labels(loss_index), '(a, a)') "hop_", trim(adjustl(s_names(i)))
+        loss_index = loss_index + 1
+      end do
+
+      do i = 1, n_s
+        write(labels(loss_index), '(a, a)') "decay_", trim(adjustl(s_names(i)))
         if (emissive(i)) then
           emissive_columns(loss_index) = .true.
         end if
@@ -158,16 +182,16 @@ module io
       end do
 
       do i = 1, n_s
-        write(labels(loss_index), '(a, a, a)') trim(adjustl(protein_name)),&
-          "_hop_",&
-          trim(adjustl(s_names(i)))
-        loss_index = loss_index + 1
+        do j = 1, n_s
+          write(labels(loss_index), '(a, a, a, a)') "transfer_",&
+            trim(adjustl(s_names(i))), "_", trim(adjustl(s_names(j)))
+          loss_index = loss_index + 1
+        end do
       end do
 
       do i = 1, n_s
         do j = 1, n_s
-          write(labels(loss_index), '(a, a, a, a, a)') trim(adjustl(protein_name)),&
-            "_ann_",&
+          write(labels(loss_index), '(a, a, a, a)') "ann_",&
             trim(adjustl(s_names(i))), "_", trim(adjustl(s_names(j)))
           loss_index = loss_index + 1
         end do
@@ -188,7 +212,7 @@ module io
       write(str_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
       write(nunit, str_fmt) (emissive_columns(i), i=1, size(emissive_columns))
 
-      write(str_fmt, '(a, i0, a)') "(ES10.4, ", n_s * (n_s + 4), "(1X, I0))"
+      write(str_fmt, '(a, i0, a)') "(ES10.4, ", size(labels), "(1X, I0))"
       do i = 1, n_bins
         write(nunit, str_fmt) bins(i), counts(i, :)
       end do

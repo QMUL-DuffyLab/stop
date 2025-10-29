@@ -196,8 +196,10 @@ module mc
         possible(4) = .true._CB
       end if
       if ((sum(n_i(site, :)).gt.1).and.(any(ann.gt.0.0))) then
-        ! annihilation possible (actually this isn't strictly true
-        ! and it might need fixing)
+        ! annihilation possible (actually this isn't strictly true;
+        ! these two conditions are necessary for annihilation to be
+        ! possible, but not sufficient in all cases, i think. but
+        ! in the edge cases the relevant rates will be 0 anyway so who cares)
         possible(6) = .true._CB
       end if
     end subroutine possible_moves
@@ -258,7 +260,7 @@ module mc
         cm%ist = s
         cm%fsi = nn
         cm%fst = s
-        cm%loss_index = (3 * n_s) + s
+        cm%loss_index = (2 * n_s) + s
       case (4)
         ! transfer
         s = rand_nonzero_int(n_i(i, :))
@@ -269,6 +271,7 @@ module mc
         cm%rate = n_i(i, s) * intra(s, s2)
         cm%ist = s
         cm%fst = s2
+        cm%loss_index = (4 + (s - 1)) * n_s + s2
       case (5)
         ! decay
         s = rand_nonzero_int(n_i(i, :))
@@ -276,12 +279,21 @@ module mc
         cm%ist = s
         cm%fst = s
         cm%emissive = emissive(s)
-        cm%loss_index = (2 * n_s) + s
+        cm%loss_index = (3 * n_s) + s
       case (6)
         ! annihilation
         s = rand_nonzero_int(n_i(i, :))
+        s2 = rand_nonzero_int(n_i(i, :))
         ! pick a state with a nonzero annihilation rate with s
-        s2 = rand_nonzero_real(ann(s, :))
+        nn = 0
+        do while ((ann(s, s2).eq.0_CF).and.(nn.lt.10))
+        ! try 10 times to find a nonzero annihilation rate,
+        ! otherwise just carry on with the zero one, i guess.
+        ! inefficient but easier than custom writing code to deal
+        ! with this very unlikely possibility
+          s2 = rand_nonzero_int(n_i(i, :))
+          nn = nn + 1
+        end do
         ! sort so that s < s2. if we generate a pair of columns in the
         ! histogram for each annihilation process, this ensures that
         ! all annihilation events go in one of them to make counting
@@ -299,7 +311,7 @@ module mc
           n_eff = n_i(i, s) + n_i(i, s2)
           cm%rate = ann(s, s2) * (n_eff * (n_eff - 1)) / 2.0
         end if
-        cm%loss_index = (4 + (s - 1)) * n_s + s2
+        cm%loss_index = (4 + n_s + (s - 1)) * n_s + s2
         cm%ist = s
         cm%fst = s2
       case default
@@ -411,7 +423,7 @@ module mc
       integer(kind=CI) :: tot_accepted(6)
       integer(kind=CI) :: i, j, curr_maxcount, rep, nunit
       integer(kind=CI), allocatable :: ec(:)
-      character(100) :: out_file_path, outfile, pop_file
+      character(200) :: out_file_path, outfile, pop_file
       logical(kind=CB) :: skip, bin_pulse
 
       call init_random(salt)
@@ -421,7 +433,8 @@ module mc
       ! first column in emissive columns isn't a real one -
       ! it's for the output file. could maybe replace this
       ! with just emissive??
-      ec = pack([(i, i = 1_CI, size(emissive_columns) - 1)], emissive_columns(2:))
+      ec = pack([(i, i = 1_CI, size(emissive_columns) - 1)],&
+        emissive_columns(2:))
 
       rep = 1_CI
       curr_maxcount = 0_CI
@@ -485,6 +498,8 @@ module mc
       write(*, '(a, i0, a, G0.6)') "Total generated: ",&
         sum(counts(:, 1:n_s)), ", generated per rep per protein = ",&
         real(sum(counts(:, 1:n_s))) / (rep * n_sites)
+      write(*, '(a, 6(I0, 1X))') "Total accepted: ",&
+        tot_accepted
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)

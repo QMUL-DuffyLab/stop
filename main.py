@@ -72,7 +72,6 @@ if __name__ == "__main__":
     else:
         raise KeyError("Invalid protein choice. Add it to protein.json!")
 
-
     detergent = True
     for h in protein['hop']:
         if h > 0.0:
@@ -84,8 +83,10 @@ if __name__ == "__main__":
     # fortran will not know about OS directory separators, so
     # just add an extra one at the end of the path for it
     fstr = np.format_float_scientific(simulation_json['fluence'])
+    rstr = np.format_float_scientific(simulation_json['rep_rate'])
     outdir = os.path.join(args.outdir,
-            f"{args.protein}", connected, f"fluence_{fstr}", "")
+            f"{args.protein}", connected, f"fluence_{fstr}",
+                          f"rep_rate_{rstr}", "")
     os.makedirs(outdir, exist_ok=True)
     print(f"Output directory: {outdir}")
 
