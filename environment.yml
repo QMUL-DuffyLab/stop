@@ -1,0 +1,13 @@
+name: stop
+channels:
+  - conda-forge
+dependencies:
+  - gfortran
+  - matplotlib
+  - numpy
+  - openmpi
+  - pandas
+  - scipy
+  - sympy
+
+prefix: "/home/callum/miniforge3/envs/stop"
