@@ -8,7 +8,14 @@ on a more serious note, this is some fortran code to simulate TCSPC experiments 
 Installation
 ============
 
-You'll need a relatively modern version of Python (I think >3.8 should do) with numpy, scipy, matplotlib and sympy, as well as a modern Fortran compiler with OpenMPI. I'm using GCC 14.2.1 on Linux and it works fine but all the Fortran is strictly F2008 so any modern Fortran compiler should work.
+You'll need a relatively modern version of Python (I think anything >3.8 should do, so any version from the last five years or so) with numpy, scipy, matplotlib, pandas and sympy, as well as a modern Fortran compiler with OpenMPI. I'm using GCC 14.2.1 on Linux and it works fine but all the Fortran is strictly F2008 so any modern Fortran compiler should work. It also all works on WSL; I have not and will not figure out how to get it to work on windows so do not ask me.
+
+The easiest way to ensure you have all of this is to first install miniforge (see [here](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install)), clone this repo and then do
+```
+mamba create -f environment.yml
+mamba activate stop
+```
+from the root directory of the cloned repo.
 
 Setup
 =====
