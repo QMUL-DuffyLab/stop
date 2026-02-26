@@ -2,6 +2,7 @@ name: stop
 channels:
   - conda-forge
 dependencies:
+  - make
   - gfortran
   - matplotlib
   - numpy
