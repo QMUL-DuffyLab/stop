@@ -9,6 +9,7 @@ module mc
   integer(kind=CI), public :: n_accepted(6)
   real(kind=CF), allocatable, public :: pulse(:)
   real(kind=CF), public :: mu, pulse_tmax
+  integer(kind=CI) :: rep
   type :: move_type
     integer(kind=CI) :: mt  = 0_CI
     integer(kind=CI) :: isi = 0_CI
@@ -20,7 +21,7 @@ module mc
     real(kind=CF) :: rate = 0.0_CF
   end type
   type(move_type), public :: cm ! current move
-  public :: construct_pulse, do_run
+  public :: construct_pulse, do_run, rep
   
   contains
 
@@ -421,7 +422,7 @@ module mc
       integer(kind=CI), intent(in) :: salt, max_counts
       real(kind=CF) :: t, interval
       integer(kind=CI) :: tot_accepted(6)
-      integer(kind=CI) :: i, j, curr_maxcount, rep, nunit
+      integer(kind=CI) :: i, j, curr_maxcount, nunit
       integer(kind=CI), allocatable :: ec(:)
       character(200) :: out_file_path, outfile, pop_file
       logical(kind=CB) :: skip, bin_pulse

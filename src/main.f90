@@ -4,8 +4,9 @@ program main
   use lattice
   use mc
   implicit none
-  character(200) :: protein_file, simulation_file, latt_file, hist_file, path
-  integer(kind=CI) :: num_procs, rank, mpierr, i, salt
+  character(200) :: protein_file, simulation_file, latt_file,&
+    hist_file, details_file, path
+  integer(kind=CI) :: num_procs, rank, mpierr, i, salt, nunit
   real(kind=CF) :: t_start, t_end
 
   call MPI_Init(mpierr)
@@ -42,8 +43,12 @@ program main
     if (rank.eq.0) then
       call MPI_Reduce(MPI_IN_PLACE, counts, size(counts), MPI_INT,&
         MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
+      call MPI_Reduce(MPI_IN_PLACE, rep, 1, MPI_INT,&
+        MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
     else
       call MPI_Reduce(counts, counts, size(counts), MPI_INT,&
+        MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
+      call MPI_Reduce(rep, rep, 1, MPI_INT,&
         MPI_SUM, 0, MPI_COMM_WORLD, mpierr)
     end if
 
@@ -51,6 +56,8 @@ program main
       trim(adjustl(lattice_name)), "_lattice_", n_sites, ".txt"
     write(hist_file, '(a, a, a, i0, a)') trim(adjustl(outdir)),&
       trim(adjustl(protein_name)), "_run_", i, ".csv"
+    write(details_file, '(a, a, a, i0, a)') trim(adjustl(outdir)),&
+      trim(adjustl(protein_name)), "_run_", i, "_details.csv"
 
     if (rank.eq.0) then
       call print_lattice(latt_file, coords, neighbours)
@@ -61,7 +68,16 @@ program main
 
   if (rank.eq.0) then
     call cpu_time(t_end)
+
+    open(newunit=nunit, file=details_file)
+
     write(*, '(a, G0.6, a)') "Time elapsed: ", t_end - t_start, "s"
+    write(nunit, '(a, G0.6, a)') "Time elapsed: ", t_end - t_start, "s"
+
+    write(*, '(a, I0)') "Total number of reps across all processes: ", rep
+    write(nunit, '(a, I0)') "Total number of reps across all processes: ", rep
+
+    close(nunit)
   end if
 
   call MPI_Finalize(mpierr)
