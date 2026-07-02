@@ -21,7 +21,7 @@ module mc
     real(kind=CF) :: rate = 0.0_CF
   end type
   type(move_type), public :: cm ! current move
-  public :: construct_pulse, do_run, rep
+  public :: construct_pulse, do_run, rep, mc_deallocations
   
   contains
 
@@ -64,6 +64,7 @@ module mc
          end do
       end if
       call random_seed(put=seed)
+      deallocate(seed)
       contains
         function lcg(s)
           ! shitty RNG to seed good RNG
@@ -315,6 +316,10 @@ module mc
         cm%loss_index = (4 + n_s + (s - 1)) * n_s + s2
         cm%ist = s
         cm%fst = s2
+        if (nn.eq.10) then
+          write(*, *) "max tries reached for annihilation pair"
+          write(*, *) cm%isi, cm%ist, cm%fsi, cm%fst, cm%rate, cm%loss_index
+        end if
       case default
         write(*, *) "shouldn't be here! cm type wrong in propose()"
         stop
@@ -403,6 +408,8 @@ module mc
                 ibin = 1 ! if t = 0 ceiling returns 0; put in first bin
               end if
               counts(ibin, cm%loss_index) = counts(ibin, cm%loss_index) + 1
+              site_moves(cm%isi, cm%loss_index) = &
+                site_moves(cm%isi, cm%loss_index) + 1
             end if
           end if
 
@@ -504,7 +511,14 @@ module mc
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)
+      write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
+        "_salt_", salt, "_rep_", rep, "_site_moves.csv"
+      call write_site_moves(outfile)
 
     end subroutine do_run
+
+    subroutine mc_deallocations()
+      deallocate(pulse)
+    end subroutine mc_deallocations
 
 end module mc

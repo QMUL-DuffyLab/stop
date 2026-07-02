@@ -9,7 +9,7 @@ module lattice
   integer(kind=CI), public :: coord
   integer(kind=CI), allocatable, public :: n_i(:, :), neighbours(:, :)
   integer(kind=CI), allocatable, public :: coords(:, :)
-  public :: generate_lattice
+  public :: generate_lattice, lattice_deallocations
   
   contains
 
@@ -88,7 +88,15 @@ module lattice
           end do
         end do
       end do
+      deallocate(lv)
 
     end subroutine generate_lattice
+
+    subroutine lattice_deallocations()
+      deallocate(neighbours)
+      deallocate(n_i)
+      deallocate(coords)
+    end subroutine lattice_deallocations
+
 
 end module lattice

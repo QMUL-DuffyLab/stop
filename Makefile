@@ -10,7 +10,7 @@ TARGET = stop
 
 OBJECTS = $(patsubst %.f90, %.o, $(SOURCES))
 
-DEBUG = 0
+DEBUG = 1
 ifeq (${DEBUG}, 1)
 	FLAGS += -gdwarf-3 -g
 else

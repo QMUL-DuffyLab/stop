@@ -80,6 +80,9 @@ program main
     close(nunit)
   end if
 
+  call io_deallocations()
+  call lattice_deallocations()
+  call mc_deallocations()
   call MPI_Finalize(mpierr)
 
 end program main

@@ -14,13 +14,14 @@ module io
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
-    which_p(:), ann_remainder(:, :), counts(:, :)
+    which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
                                intra(:, :), ann(:, :), bins(:)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
     emissive_columns(:)
   public :: get_protein_params, get_simulation_params,&
-    print_lattice, generate_histogram, write_histogram
+    print_lattice, generate_histogram, write_histogram, write_site_moves,&
+    io_deallocations
 
   contains
 
@@ -106,27 +107,32 @@ module io
       hop = 1.0_CF / hop
       intra = 1.0_CF / intra
       ann = 1.0_CF / ann
+
+      deallocate(dist_temp)
+      deallocate(intra_temp)
+      deallocate(ann_temp)
+      deallocate(ann_rem_temp)
     end subroutine get_protein_params
 
     subroutine get_simulation_params(filename)
-     ! get the simulation parameters from a file
-     character(len=*), intent(in) :: filename
-     integer(kind=CI) :: nunit
+      ! get the simulation parameters from a file
+      character(len=*), intent(in) :: filename
+      integer(kind=CI) :: nunit
 
-     open(newunit=nunit, file=filename)
-     read(nunit, *) fwhm
-     read(nunit, *) fluence
-     read(nunit, *) n_sites
-     read(nunit, *) lattice_name
-     read(nunit, *) rep_rate
-     read(nunit, *) burn_reps
-     read(nunit, *) tmax
-     read(nunit, *) dt1
-     read(nunit, *) dt2
-     read(nunit, *) binwidth
-     read(nunit, *) n_counts
-     read(nunit, *) n_repeats
-     read(nunit, '(a)') outdir
+      open(newunit=nunit, file=filename)
+      read(nunit, *) fwhm
+      read(nunit, *) fluence
+      read(nunit, *) n_sites
+      read(nunit, *) lattice_name
+      read(nunit, *) rep_rate
+      read(nunit, *) burn_reps
+      read(nunit, *) tmax
+      read(nunit, *) dt1
+      read(nunit, *) dt2
+      read(nunit, *) binwidth
+      read(nunit, *) n_counts
+      read(nunit, *) n_repeats
+      read(nunit, '(a)') outdir
 
     end subroutine get_simulation_params
 
@@ -147,6 +153,7 @@ module io
       n_losses = n_s * (4 + 2 * n_s)
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
+      allocate(site_moves(n_sites, n_losses), source=0_CI)
       allocate(labels(n_losses + 1))
       allocate(bins(n_bins), source=0.0_CF)
       allocate(emissive_columns(n_losses + 1), source=.false._CB)
@@ -218,5 +225,46 @@ module io
       end do
       close(nunit)
     end subroutine write_histogram
+
+    subroutine write_site_moves(filename)
+      character(len=*) :: filename
+      integer :: nunit, i
+      character(len=30) :: str_fmt
+
+      open(newunit=nunit, file=filename)
+
+      write(str_fmt, '(a, i0, a)') "(", size(labels), "(a, 1X))"
+      write(nunit, str_fmt) (trim(adjustl(labels(i))), i=1,size(labels))
+
+      write(str_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
+      write(nunit, str_fmt) (emissive_columns(i), i=1, size(emissive_columns))
+
+      write(str_fmt, '(a, i0, a)') "(i0, ", size(labels), "(1X, I0))"
+      do i = 1, n_sites
+        write(nunit, str_fmt) i, site_moves(i, :)
+      end do
+      close(nunit)
+    end subroutine write_site_moves
+
+    subroutine io_deallocations()
+      deallocate(p_names)
+      deallocate(s_names)
+      deallocate(which_p)
+      deallocate(abundance)
+      deallocate(dist)
+      deallocate(intra)
+      deallocate(ann)
+      deallocate(ann_remainder)
+      deallocate(n_tot)
+      deallocate(n_thermal)
+      deallocate(hop)
+      deallocate(emissive)
+      deallocate(xsec)
+      deallocate(counts)
+      deallocate(site_moves)
+      deallocate(labels)
+      deallocate(bins)
+      deallocate(emissive_columns)
+    end subroutine io_deallocations
 
 end module io
