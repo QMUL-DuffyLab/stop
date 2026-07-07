@@ -6,6 +6,7 @@ module io
   integer, parameter, public :: CF = c_double
   integer, parameter, public :: CI = c_int
   integer, parameter, public :: CB = c_bool
+  integer, parameter, public :: hist_max = 11
   character(len=100), public :: protein_name, lattice_name
   character(len=50), allocatable :: labels(:)
   character(len=200), public :: outdir
@@ -14,14 +15,15 @@ module io
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
-    which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :)
+    which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :),&
+    site_gen_hist(:, :), site_ann_hist(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
                                intra(:, :), ann(:, :), bins(:)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
     emissive_columns(:)
   public :: get_protein_params, get_simulation_params,&
     print_lattice, generate_histogram, write_histogram, write_site_moves,&
-    io_deallocations
+    write_move_hists, io_deallocations
 
   contains
 
@@ -154,6 +156,8 @@ module io
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
       allocate(site_moves(n_sites, n_losses), source=0_CI)
+      allocate(site_gen_hist(n_sites, hist_max), source=0_CI)
+      allocate(site_ann_hist(n_sites, hist_max), source=0_CI)
       allocate(labels(n_losses + 1))
       allocate(bins(n_bins), source=0.0_CF)
       allocate(emissive_columns(n_losses + 1), source=.false._CB)
@@ -246,6 +250,27 @@ module io
       close(nunit)
     end subroutine write_site_moves
 
+    subroutine write_move_hists(basename)
+      character(len=*) :: basename
+      character(len=100) :: gen_filename, ann_filename
+      integer :: genunit, annunit, i
+      character(len=30) :: str_fmt
+
+      write(gen_filename, '(a, a)') trim(adjustl(basename)), "gen_hist.csv"
+      write(ann_filename, '(a, a)') trim(adjustl(basename)), "ann_hist.csv"
+
+      open(newunit=genunit, file=trim(adjustl(gen_filename)))
+      open(newunit=annunit, file=trim(adjustl(ann_filename)))
+
+      write(str_fmt, '(a, i0, a)') "(i0, ", hist_max, "(1X, I0))"
+      do i = 1, n_sites
+        write(genunit, str_fmt) i, site_gen_hist(i, :)
+        write(annunit, str_fmt) i, site_ann_hist(i, :)
+      end do
+      close(genunit)
+      close(annunit)
+    end subroutine write_move_hists
+
     subroutine io_deallocations()
       deallocate(p_names)
       deallocate(s_names)
@@ -265,6 +290,8 @@ module io
       deallocate(labels)
       deallocate(bins)
       deallocate(emissive_columns)
+      deallocate(site_gen_hist)
+      deallocate(site_ann_hist)
     end subroutine io_deallocations
 
 end module io

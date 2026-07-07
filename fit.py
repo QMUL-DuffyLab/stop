@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.special import factorial
 
 def get_histogram(filename):
     '''
@@ -87,6 +88,45 @@ def plot_all(labels, bins, counts, outfile):
     fig.tight_layout()
     plt.savefig(outfile)
     plt.close()
+
+def plot_gen_ann_hists(gen_file, ann_file, mu):
+    '''
+    plot a grouped histogram of the number of generation and
+    annihilation events per site, along with a scaled Poisson
+    PMF to show how closely the generations resemble a Poisson
+    process. just for debugging really
+    '''
+    gens = np.loadtxt(gen_file)
+    anns = np.loadtxt(ann_file)
+    gen_sums = np.sum(gens[:, 1:], axis=0)
+    ann_sums = np.sum(anns[:, 1:], axis=0)
+    nmax = len(gen_sums)
+    poisson = np.array([np.exp(-mu) * mu**ii / factorial(ii)
+        for ii in range(nmax)])
+    total = np.sum(gen_sums)
+    xticks = [f"{ii:1d}" for ii in range(nmax)]
+    xticks[-1] += "+" # top bin is open-ended in the fortran output
+    fig, ax = plt.subplots()
+    ax.grouped_bar({'Gen': gen_sums, 'Ann': ann_sums}, group_spacing=1)
+    ax.plot(range(nmax), poisson * total, marker='o',
+            color='k', label='Poisson')
+    ax.set_yscale('log')
+    ax.set_ylabel('count')
+    ax.set_xlabel('number of events')
+    ax.set_xticks(range(nmax))
+    ax.set_xticklabels(xticks)
+    ax.legend()
+    fig.savefig(os.path.splitext(gen_file)[0] + ".pdf")
+    plt.close()
+
+def plot_all_from_file(histfile):
+    '''
+    wrap get_histogram and plot_all to make it easier
+    if plotting bits in a terminal or whatever
+    '''
+    labels, bins, counts, sum_emissive = get_histogram(histfile)
+    outfile = os.path.splitext(histfile)[0] + ".pdf"
+    plot_all(labels, bins, counts, outfile)
 
 '''
 below is all taken from my old aggregate code

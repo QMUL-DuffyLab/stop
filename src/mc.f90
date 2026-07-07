@@ -7,6 +7,7 @@ module mc
   logical(kind=CB) :: possible(6) ! 6 types of moves considered
   logical(kind=CB) :: bad_proposal
   integer(kind=CI), public :: n_accepted(6)
+  integer(kind=CI), allocatable :: gens(:), anns(:)
   real(kind=CF), allocatable, public :: pulse(:)
   real(kind=CF), public :: mu, pulse_tmax
   integer(kind=CI) :: rep
@@ -175,6 +176,12 @@ module mc
       real(kind=CF), intent(in) :: ft 
       integer, intent(in) :: site
       possible = .false._CB
+      ! check that no process has reduced population where it shouldn't
+      ! - don't think this could ever happen but checking it
+      if (any(n_i(site, :).lt.0)) then
+        write(*, *) "negative population on site", site
+        stop
+      end if
       ! if the pulse is on (ft) and there's a positive cross section
       ! then excitations can be generated. in general the second part
       ! should always be true, i guess, otherwise what are we doing here
@@ -410,6 +417,14 @@ module mc
               counts(ibin, cm%loss_index) = counts(ibin, cm%loss_index) + 1
               site_moves(cm%isi, cm%loss_index) = &
                 site_moves(cm%isi, cm%loss_index) + 1
+
+              if (cm%mt.eq.1) then
+                gens(cm%isi) = gens(cm%isi) + 1
+              end if
+              if (cm%mt.eq.6) then
+                anns(cm%isi) = anns(cm%isi) + 1
+              end if
+
             end if
           end if
 
@@ -423,6 +438,28 @@ module mc
         end do moveloop
 
       end do
+
+      do i = 1, n_sites
+        j = gens(i)
+        if (j.eq.0) then
+          j = 1
+        else if ((j.gt.0).and.(j.lt.hist_max)) then
+          j = j + 1
+        else if (j.ge.hist_max) then
+          j = hist_max
+        end if
+        site_gen_hist(i, j) = site_gen_hist(i, j) + 1
+        j = anns(i)
+        if (j.eq.0) then
+          j = 1
+        else if ((j.gt.0).and.(j.lt.hist_max)) then
+          j = j + 1
+        else if (j.ge.hist_max) then
+          j = hist_max
+        end if
+        site_ann_hist(i, j) = site_ann_hist(i, j) + 1
+      end do
+
     end subroutine mc_step
 
     subroutine do_run(salt, max_counts, out_file_path)
@@ -437,6 +474,9 @@ module mc
       call init_random(salt)
       counts = 0_CI
       tot_accepted = 0_CI
+
+      allocate(gens(n_sites), source=0_CI)
+      allocate(anns(n_sites), source=0_CI)
 
       ! first column in emissive columns isn't a real one -
       ! it's for the output file. could maybe replace this
@@ -461,6 +501,9 @@ module mc
 
         t = 0.0_CF
         skip = .false.
+        gens = 0_CI
+        anns = 0_CI
+
 
         pulseloop: do while (t.lt.tmax)
           call mc_step(t, dt1, bin_pulse)
@@ -514,11 +557,16 @@ module mc
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_site_moves.csv"
       call write_site_moves(outfile)
+      write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
+        "_salt_", salt, "_rep_", rep, "_"
+      call write_move_hists(outfile)
 
     end subroutine do_run
 
     subroutine mc_deallocations()
       deallocate(pulse)
+      deallocate(gens)
+      deallocate(anns)
     end subroutine mc_deallocations
 
 end module mc

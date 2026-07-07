@@ -16,6 +16,7 @@ mamba create -f environment.yml
 mamba activate stop
 ```
 from the root directory of the cloned repo.
+Note that e.g. ipython and jupyter are not included in that YAML file because they're not strictly necessary so you'll have to do `mamba install ipython` or similar if you want those.
 
 Setup
 =====
@@ -90,6 +91,9 @@ Running
 =======
 
 Call it from a command line with between one and three arguments. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is the name of the protein you want to simulate, and should be one of the names in `protein.json`. Optional ones are an output path, which if not given will default to `./out` (i.e. a new folder named "out" in your current directory). Third is the number of cores you want to run it on - if you don't give this one it'll do `os.cpu_count()` and just use that, which may not be optimal. The Python will create the output path, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns. By default it will use the decay times of the states as a starting point and try 1- to n-exponential fits based on those.
+
+Note that the fitting script is not that sophisticated really; it cuts off the trace at the peak and fits 1- to n-exponentials to the tail, then fixes the fitted time constants in place and does a reconvolution fit with the IRF for the amplitudes.
+It does not do anything more complicated than that; the output traces are just CSVs and therefore hopefully it should be possible to load them into another fitting program fairly easily.
 
 TODO: make `tau_init` a parameter.
 
