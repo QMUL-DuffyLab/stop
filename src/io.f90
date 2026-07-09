@@ -1,12 +1,13 @@
 module io
   use mpi_f08
   use iso_c_binding
+  use ieee_arithmetic
   implicit none
   private
   integer, parameter, public :: CF = c_double
   integer, parameter, public :: CI = c_int
   integer, parameter, public :: CB = c_bool
-  integer, parameter, public :: hist_max = 11
+  integer, parameter, public :: hist_max = 10
   character(len=100), public :: protein_name, lattice_name
   character(len=50), allocatable :: labels(:)
   character(len=200), public :: outdir
@@ -18,12 +19,12 @@ module io
     which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :),&
     site_gen_hist(:, :), site_ann_hist(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
-                               intra(:, :), ann(:, :), bins(:)
+    intra(:, :), ann(:, :), bins(:), ann_rates(:, :)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
     emissive_columns(:)
   public :: get_protein_params, get_simulation_params,&
     print_lattice, generate_histogram, write_histogram, write_site_moves,&
-    write_move_hists, io_deallocations
+    write_move_hists, io_deallocations, labels
 
   contains
 
@@ -34,7 +35,7 @@ module io
       ! run some python to set the params in a JSON file and print
       ! them out into a separate file for the fortran at runtime.
       character(len=*), intent(in) :: filename
-      integer(kind=CI) :: nunit, i
+      integer(kind=CI) :: nunit, i, j
       logical(kind=CB), allocatable :: dist_temp(:)
       integer(kind=CI), allocatable :: ann_rem_temp(:)
       real(kind=CF), allocatable :: intra_temp(:), ann_temp(:)
@@ -50,6 +51,7 @@ module io
       allocate(abundance(n_s))
       allocate(dist_temp(n_s * n_s))
       allocate(dist(n_s, n_s))
+      allocate(ann_rates(n_s, n_s)) ! used in mc.f90
       allocate(intra_temp(n_s * n_s))
       allocate(intra(n_s, n_s))
       allocate(ann_temp(n_s * n_s))
@@ -90,13 +92,37 @@ module io
       ann           = transpose(reshape(ann_temp,     (/ n_s, n_s /)))
       ann_remainder = transpose(reshape(ann_rem_temp, (/ n_s, n_s /)))
 
+      ! parameters given in protein.json as time constants;
+      ! convert them to rates in s^{-1}. be careful not to do 1./0
+      do i = 1, n_s
+        if (hop(i).eq.0.0_CF) then
+          hop(i) = 0.0_CF
+        else
+          hop(i) = 1.0_CF / hop(i)
+        end if
+        do j = 1, n_s
+          if (intra(i, j).eq.0.0_CF) then
+            intra(i, j) = 0.0_CF
+          else
+            intra(i, j) = 1.0_CF / intra(i, j)
+          end if
+          if (ann(i, j).eq.0.0_CF) then
+            ann(i, j) = 0.0_CF
+          else
+            ann(i, j) = 1.0_CF / ann(i, j)
+          end if
+        end do
+      end do
+
       write(*, *)
-      write(*, *) "intra"
+      write(*, *) "hop (rates)"
+      write(*, *) hop
+      write(*, *) "intra (rates)"
       do i = 1, n_s
         write(*, *) intra(i, :)
       end do
       write(*, *)
-      write(*, *) "ann"
+      write(*, *) "ann (rates)"
       do i = 1, n_s
         write(*, *) ann(i, :)
       end do
@@ -105,10 +131,6 @@ module io
       do i = 1, n_s
         write(*, *) ann_remainder(i, :)
       end do
-
-      hop = 1.0_CF / hop
-      intra = 1.0_CF / intra
-      ann = 1.0_CF / ann
 
       deallocate(dist_temp)
       deallocate(intra_temp)
@@ -252,7 +274,7 @@ module io
 
     subroutine write_move_hists(basename)
       character(len=*) :: basename
-      character(len=100) :: gen_filename, ann_filename
+      character(len=200) :: gen_filename, ann_filename
       integer :: genunit, annunit, i
       character(len=30) :: str_fmt
 
@@ -277,6 +299,7 @@ module io
       deallocate(which_p)
       deallocate(abundance)
       deallocate(dist)
+      deallocate(ann_rates)
       deallocate(intra)
       deallocate(ann)
       deallocate(ann_remainder)

@@ -82,6 +82,8 @@ module mc
     end subroutine init_random
 
     function rand_nonzero_real(arr) result(i)
+      ! return the index of a random nonzero value in the
+      ! real-valued 1d array `arr`
       real(kind=CF), intent(in) :: arr(:)
       real(kind=CF) :: r
       integer(kind=CI) :: i
@@ -99,6 +101,7 @@ module mc
     end function rand_nonzero_real
 
     function rand_nonzero_int(arr) result(i)
+      ! same as rand_nonzero_real but for an integer-valued 1d array
       integer(kind=CI), intent(in) :: arr(:)
       real(kind=CF) :: r
       integer(kind=CI) :: i
@@ -115,7 +118,33 @@ module mc
       end if
     end function rand_nonzero_int
 
+    function rand_nonzero_real_2d(arr) result(i)
+      ! return the index of a random nonzero value in the
+      ! real-valued 2d array `arr`. note that pack compresses
+      ! the array into 1d, so this will return the 1d index;
+      ! for a higher-rank array you'll have to figure out the
+      ! indexing yourself
+      real(kind=CF), intent(in) :: arr(:, :)
+      real(kind=CF) :: r
+      integer(kind=CI) :: i, sa(2)
+      integer(kind=CI), allocatable :: ind(:)
+      real(kind=CF), allocatable :: arr_1d(:)
+      sa = shape(arr)
+      arr_1d = reshape(arr, (/product(sa)/))
+      ind = pack([(i, i = 1_CI, size(arr_1d))], arr_1d.gt.0.0_CF)
+      call random_number(r)
+      i = ind(ceiling(r * size(ind)))
+      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
+        write(*, *) "invalid i returned by rand_nonzero_real"
+        write(*, *) "input array: ", arr
+        write(*, *) "index array: ", ind
+        write(*, *) "rand(): ", r
+        stop
+      end if
+    end function rand_nonzero_real_2d
+
     function rand_true(arr) result(i)
+      ! same again for a boolean 1d array
       logical(kind=CB), intent(in) :: arr(:)
       real(kind=CF) :: r
       integer(kind=CI) :: i
@@ -171,6 +200,26 @@ module mc
       end do
     end subroutine construct_pulse
 
+    subroutine ann_rate_calc(site)
+      ! calcuulate current annihilation rates for each possible
+      ! state pair on the current site. I feel like there's probably
+      ! a more efficient way of doing this (e.g. the matrix is symmetric
+      ! so we can cut it down a bit there) but this should work fine
+      integer(kind=CI), intent(in) :: site
+      integer :: i, j
+      ann_rates = 0.0_CF
+      do i = 1, n_s
+        do j = 1, n_s
+          if (i == j) then
+            ann_rates(i, j) = n_i(site, i) * ((n_i(site, i) - 1) / 2.0) * &
+              ann(i, j)
+          else
+            ann_rates(i, j) = n_i(site, i) * n_i(site, j) * ann(i, j)
+          end if
+        end do
+      end do
+    end subroutine ann_rate_calc
+
     subroutine possible_moves(site, ft)
       ! site - integer index into n_sites
       real(kind=CF), intent(in) :: ft 
@@ -179,7 +228,8 @@ module mc
       ! check that no process has reduced population where it shouldn't
       ! - don't think this could ever happen but checking it
       if (any(n_i(site, :).lt.0)) then
-        write(*, *) "negative population on site", site
+        write(*, *) "negative population on site", site, n_i(site, :)
+        write(*, *) "current move", cm
         stop
       end if
       ! if the pulse is on (ft) and there's a positive cross section
@@ -204,24 +254,21 @@ module mc
         ! must be more than one state on the protein
         possible(4) = .true._CB
       end if
-      if ((sum(n_i(site, :)).gt.1).and.(any(ann.gt.0.0))) then
-        ! annihilation possible (actually this isn't strictly true;
-        ! these two conditions are necessary for annihilation to be
-        ! possible, but not sufficient in all cases, i think. but
-        ! in the edge cases the relevant rates will be 0 anyway so who cares)
+      call ann_rate_calc(site)
+      if (any(ann_rates.gt.0.0)) then
+        ! see ann_rate_calc
         possible(6) = .true._CB
       end if
     end subroutine possible_moves
 
-    subroutine propose(i, ft)
-      integer, intent(in) :: i
+    subroutine propose(site, ft)
+      integer, intent(in) :: site
       real(kind=CF), intent(in) :: ft 
       integer :: s, s2, p, nn, n_eff
-
       ! make sure there's no leftover stuff in current_move
       ! that might mess with this
       call zero_move(cm)
-      call possible_moves(i, ft)
+      call possible_moves(site, ft)
       ! indices where possible is true
       if (.not.any(possible)) then
         ! something has gone badly wrong somewhere
@@ -230,8 +277,8 @@ module mc
       end if
 
       cm%mt = rand_true(possible)
-      cm%isi = i
-      cm%fsi = i
+      cm%isi = site
+      cm%fsi = site
 
       select case (cm%mt)
       case (1)
@@ -240,7 +287,7 @@ module mc
         ! which index that cross section is at
         s = rand_nonzero_real(xsec) ! which state is it
         p = which_p(s) ! which pigment is this state on
-        cm%rate = ft * xsec(s) * (n_tot(p) - n_i(i, s)) / n_tot(p)
+        cm%rate = ft * xsec(s) * (n_tot(p) - n_i(site, s)) / n_tot(p)
         cm%ist = s
         cm%fst = s
         cm%loss_index = s
@@ -248,23 +295,23 @@ module mc
         ! stimulated emission
         s = rand_nonzero_real(xsec) ! which state is it
         p = which_p(s) ! which pigment is this state on
-        cm%rate = ft * xsec(s) * n_i(i, s) / n_tot(p)
+        cm%rate = ft * xsec(s) * n_i(site, s) / n_tot(p)
         cm%ist = s
         cm%fst = s
         ! this assumes there's only one protein in the system
-        ! i.e. it'll need changing if there are multiple proteins
+        ! site.e. it'll need changing if there are multiple proteins
         cm%loss_index = n_s + s
       case (3)
         ! hop
-        s = rand_nonzero_int(n_i(i, :))
-        s2 = rand_nonzero_int(neighbours(i, :))
-        nn = neighbours(i, s2)
+        s = rand_nonzero_int(n_i(site, :))
+        s2 = rand_nonzero_int(neighbours(site, :))
+        nn = neighbours(site, s2)
         p = which_p(s)
-        cm%rate = n_i(i, s) * hop(s)
-        if (n_i(i, s).lt.n_i(nn, s)) then
+        cm%rate = n_i(site, s) * hop(s)
+        if (n_i(site, s).lt.n_i(nn, s)) then
           ! entropic penalty for hopping to a higher-occupied site
-          cm%rate = cm%rate * (n_i(i, s) * (n_thermal(p) - n_i(nn, s))) /&
-          ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(i, s) + 1))
+          cm%rate = cm%rate * (n_i(site, s) * (n_thermal(p) - n_i(nn, s))) /&
+          ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(site, s) + 1))
         end if
         cm%ist = s
         cm%fsi = nn
@@ -272,37 +319,31 @@ module mc
         cm%loss_index = (2 * n_s) + s
       case (4)
         ! transfer
-        s = rand_nonzero_int(n_i(i, :))
+        s = rand_nonzero_int(n_i(site, :))
         s2 = rand_int(n_s)
         do while (s2.eq.s)
           s2 = rand_int(n_s)
         end do
-        cm%rate = n_i(i, s) * intra(s, s2)
+        cm%rate = n_i(site, s) * intra(s, s2)
         cm%ist = s
         cm%fst = s2
         cm%loss_index = (4 + (s - 1)) * n_s + s2
       case (5)
         ! decay
-        s = rand_nonzero_int(n_i(i, :))
-        cm%rate = n_i(i, s) * intra(s, s)
+        s = rand_nonzero_int(n_i(site, :))
+        cm%rate = n_i(site, s) * intra(s, s)
         cm%ist = s
         cm%fst = s
         cm%emissive = emissive(s)
         cm%loss_index = (3 * n_s) + s
       case (6)
         ! annihilation
-        s = rand_nonzero_int(n_i(i, :))
-        s2 = rand_nonzero_int(n_i(i, :))
-        ! pick a state with a nonzero annihilation rate with s
-        nn = 0
-        do while ((ann(s, s2).eq.0_CF).and.(nn.lt.10))
-        ! try 10 times to find a nonzero annihilation rate,
-        ! otherwise just carry on with the zero one, i guess.
-        ! inefficient but easier than custom writing code to deal
-        ! with this very unlikely possibility
-          s2 = rand_nonzero_int(n_i(i, :))
-          nn = nn + 1
-        end do
+        call ann_rate_calc(site)
+        ! pick a state with a nonzero annihilation rate
+        nn = rand_nonzero_real_2d(ann_rates)
+        ! split the returned 1d index (ann is a square n_s x n_s matrix)
+        s = ((nn - 1) / n_s) + 1
+        s2 = mod(nn - 1, n_s) + 1
         ! sort so that s < s2. if we generate a pair of columns in the
         ! histogram for each annihilation process, this ensures that
         ! all annihilation events go in one of them to make counting
@@ -314,19 +355,10 @@ module mc
           s = s2
           s2 = n_eff
         end if
-        if (dist(s, s2)) then
-          cm%rate = n_i(i, s) * n_i(i, s2) * ann(s, s2)
-        else
-          n_eff = n_i(i, s) + n_i(i, s2)
-          cm%rate = ann(s, s2) * (n_eff * (n_eff - 1)) / 2.0
-        end if
+        cm%rate = ann_rates(s, s2)
         cm%loss_index = (4 + n_s + (s - 1)) * n_s + s2
         cm%ist = s
         cm%fst = s2
-        if (nn.eq.10) then
-          write(*, *) "max tries reached for annihilation pair"
-          write(*, *) cm%isi, cm%ist, cm%fsi, cm%fst, cm%rate, cm%loss_index
-        end if
       case default
         write(*, *) "shouldn't be here! cm type wrong in propose()"
         stop
@@ -357,6 +389,12 @@ module mc
         write(*, *) "something wrong in do_move!", cm%mt
         stop
       end select
+      if (any(n_i(:, :).lt.0)) then
+        write(*, *) "do_move: negative population."
+        write(*, *) "current move: ", cm
+        write(*, *) "site population: ", n_i(cm%isi, :)
+        stop
+      end if
     end subroutine do_move
 
     subroutine mc_step(t, dt, bin)
@@ -424,7 +462,6 @@ module mc
               if (cm%mt.eq.6) then
                 anns(cm%isi) = anns(cm%isi) + 1
               end if
-
             end if
           end if
 
@@ -437,27 +474,6 @@ module mc
 
         end do moveloop
 
-      end do
-
-      do i = 1, n_sites
-        j = gens(i)
-        if (j.eq.0) then
-          j = 1
-        else if ((j.gt.0).and.(j.lt.hist_max)) then
-          j = j + 1
-        else if (j.ge.hist_max) then
-          j = hist_max
-        end if
-        site_gen_hist(i, j) = site_gen_hist(i, j) + 1
-        j = anns(i)
-        if (j.eq.0) then
-          j = 1
-        else if ((j.gt.0).and.(j.lt.hist_max)) then
-          j = j + 1
-        else if (j.ge.hist_max) then
-          j = hist_max
-        end if
-        site_ann_hist(i, j) = site_ann_hist(i, j) + 1
       end do
 
     end subroutine mc_step
@@ -494,6 +510,9 @@ module mc
 
       reploop: do while (curr_maxcount.lt.max_counts)
 
+        gens = 0_CI
+        anns = 0_CI
+
         bin_pulse = .true.
         if (rep.lt.burn_reps) then
           bin_pulse = .false.
@@ -501,9 +520,6 @@ module mc
 
         t = 0.0_CF
         skip = .false.
-        gens = 0_CI
-        anns = 0_CI
-
 
         pulseloop: do while (t.lt.tmax)
           call mc_step(t, dt1, bin_pulse)
@@ -533,8 +549,31 @@ module mc
               end if
             end do
           end do
-          write (*, *) salt, rep, curr_maxcount, ec
+          write (*, '(a, I0, a, I0, a, I0, a, a)') "salt = ", salt,&
+            " rep = ", rep, " current max count = ", curr_maxcount,&
+            " type = ", labels(ec + 1) ! labels 1 is "Time (s)"
         end if
+
+        do i = 1, n_sites
+          j = gens(i)
+          if (j.eq.0) then
+            j = 1
+          else if ((j.gt.0).and.(j.lt.hist_max)) then
+            j = j + 1
+          else if (j.ge.hist_max) then
+            j = hist_max
+          end if
+          site_gen_hist(i, j) = site_gen_hist(i, j) + 1
+          j = anns(i)
+          if (j.eq.0) then
+            j = 1
+          else if ((j.gt.0).and.(j.lt.hist_max)) then
+            j = j + 1
+          else if (j.ge.hist_max) then
+            j = hist_max
+          end if
+          site_ann_hist(i, j) = site_ann_hist(i, j) + 1
+        end do
 
         write(nunit, *) rep, sum(n_i, dim=1), t
         rep = rep + 1
@@ -549,8 +588,13 @@ module mc
       write(*, '(a, i0, a, G0.6)') "Total generated: ",&
         sum(counts(:, 1:n_s)), ", generated per rep per protein = ",&
         real(sum(counts(:, 1:n_s))) / (rep * n_sites)
+      ! NB: the first number in tot_accepted will NOT be the same as
+      ! total generated above, because that only counts the binned
+      ! generations, i.e. it ignores those in the burn reps
       write(*, '(a, 6(I0, 1X))') "Total accepted: ",&
         tot_accepted
+      write(*, *) "Annihilation to decay ratio:",&
+        float(tot_accepted(6)) / tot_accepted(5)
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
       call write_histogram(outfile)
@@ -561,12 +605,13 @@ module mc
         "_salt_", salt, "_rep_", rep, "_"
       call write_move_hists(outfile)
 
+      deallocate(gens)
+      deallocate(anns)
+
     end subroutine do_run
 
     subroutine mc_deallocations()
       deallocate(pulse)
-      deallocate(gens)
-      deallocate(anns)
     end subroutine mc_deallocations
 
 end module mc
