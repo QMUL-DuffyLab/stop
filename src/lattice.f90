@@ -9,6 +9,7 @@ module lattice
   integer(kind=CI), public :: coord
   integer(kind=CI), allocatable, public :: n_i(:, :), neighbours(:, :)
   integer(kind=CI), allocatable, public :: coords(:, :)
+  logical(kind=CB), allocatable, public :: is_present(:, :)
   public :: generate_lattice, lattice_deallocations
   
   contains
@@ -50,6 +51,7 @@ module lattice
 
       allocate(neighbours(nmax, coord))
       allocate(n_i(nmax, n_s))
+      allocate(is_present(nmax, n_s))
       allocate(coords(nmax, 2))
       neighbours = 0_CI
       n_i = 0_CI
@@ -96,6 +98,7 @@ module lattice
       deallocate(neighbours)
       deallocate(n_i)
       deallocate(coords)
+      deallocate(is_present)
     end subroutine lattice_deallocations
 
 

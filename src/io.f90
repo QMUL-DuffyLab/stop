@@ -11,6 +11,7 @@ module io
   character(len=100), public :: protein_name, lattice_name
   character(len=50), allocatable :: labels(:)
   character(len=200), public :: outdir
+  logical, public :: debug
   integer(kind=CI), public :: n_p, n_s, n_sites, n_bins,&
     n_counts, n_repeats, burn_reps
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
@@ -19,7 +20,7 @@ module io
     which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :),&
     site_gen_hist(:, :), site_ann_hist(:, :)
   real(kind=CF), allocatable, public :: abundance(:), hop(:), xsec(:),&
-    intra(:, :), ann(:, :), bins(:), ann_rates(:, :)
+    intra(:, :), ann(:, :), bins(:)
   logical(kind=CB), allocatable, public :: emissive(:), dist(:, :),&
     emissive_columns(:)
   public :: get_protein_params, get_simulation_params,&
@@ -51,7 +52,6 @@ module io
       allocate(abundance(n_s))
       allocate(dist_temp(n_s * n_s))
       allocate(dist(n_s, n_s))
-      allocate(ann_rates(n_s, n_s)) ! used in mc.f90
       allocate(intra_temp(n_s * n_s))
       allocate(intra(n_s, n_s))
       allocate(ann_temp(n_s * n_s))
@@ -142,6 +142,7 @@ module io
       ! get the simulation parameters from a file
       character(len=*), intent(in) :: filename
       integer(kind=CI) :: nunit
+      character(len=10) :: dstr
 
       open(newunit=nunit, file=filename)
       read(nunit, *) fwhm
@@ -157,6 +158,15 @@ module io
       read(nunit, *) n_counts
       read(nunit, *) n_repeats
       read(nunit, '(a)') outdir
+      read(nunit, '(a)') dstr 
+      if (dstr.eq.'F'.or.dstr.eq.'False'.or.dstr.eq.'false') then
+        debug = .false.
+      else if (dstr.eq.'T'.or.dstr.eq.'True'.or.dstr.eq.'true') then
+        debug = .true.
+      else
+        write(*, *) "debug string not parsed in simulation.json"
+        stop
+      end if
 
     end subroutine get_simulation_params
 
@@ -299,7 +309,6 @@ module io
       deallocate(which_p)
       deallocate(abundance)
       deallocate(dist)
-      deallocate(ann_rates)
       deallocate(intra)
       deallocate(ann)
       deallocate(ann_remainder)

@@ -44,6 +44,7 @@ def write_fortran_inputs(pj, sj, name, outdir):
         f.write(f"{sj['n_counts']}\n")
         f.write(f"{sj['n_repeats']}\n")
         f.write(f"{outdir}\n")
+        f.write(f"{sj['debug']}\n")
     return pf, sf
 
 if __name__ == "__main__":
