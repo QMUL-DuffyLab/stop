@@ -400,7 +400,8 @@ module mc
           s2 = n_eff
         end if
         if (s.eq.s2) then
-          cm%rate = n_i(site, s) * (n_i(site, s) / 2.0) * ann_rates(site, s, s)
+          cm%rate = n_i(site, s) * ((n_i(site, s) - 1.0_CF) / 2.0) *&
+            ann_rates(site, s, s)
         else
           cm%rate = n_i(site, s) * n_i(site, s2) * ann_rates(site, s, s2)
         end if
