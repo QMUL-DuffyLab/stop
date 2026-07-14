@@ -5,3 +5,5 @@ out/*
 in/*
 *.ipynb*
 *pycache*
+protein.json
+simulation.json

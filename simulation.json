@@ -9,7 +9,7 @@
   "dt1": 1e-12,
   "dt2": 1e-9,
   "binwidth": 25e-12,
-  "n_counts": 100,
-  "n_repeats": 2,
+  "n_counts": 1000,
+  "n_repeats": 1,
   "debug": false
 }

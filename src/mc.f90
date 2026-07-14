@@ -10,8 +10,8 @@ module mc
   integer(kind=CI), allocatable :: gens(:), anns(:)
   real(kind=CF), allocatable :: pulse(:)
   real(kind=CF) :: mu, pulse_tmax
-  real(kind=CF), allocatable :: gen_rates(:), se_rates(:),&
-    hop_rates(:, :), intra_rates(:, :), ann_rates(:, :)
+  real(kind=CF), allocatable :: gen_rates(:, :),&
+    hop_rates(:, :, :), intra_rates(:, :, :), ann_rates(:, :, :)
   integer(kind=CI) :: rep
   type :: move_type
     integer(kind=CI) :: mt  = 0_CI
@@ -83,6 +83,24 @@ module mc
         end function lcg
     end subroutine init_random
 
+    function rand_nonzero_int(arr) result(i)
+      ! same as rand_nonzero_real but for an integer-valued 1d array
+      integer(kind=CI), intent(in) :: arr(:)
+      real(kind=CF) :: r
+      integer(kind=CI) :: i
+      integer(kind=CI), allocatable :: ind(:)
+      ind = pack([(i, i = 1_CI, size(arr))], arr.gt.0_CI)
+      call random_number(r)
+      i = ind(ceiling(r * size(ind)))
+      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
+        write(*, *) "invalid i returned by rand_nonzero_int"
+        write(*, *) "input array: ", arr
+        write(*, *) "index array: ", ind
+        write(*, *) "rand(): ", r
+        stop
+      end if
+    end function rand_nonzero_int
+
     function rand_nonzero_real(arr) result(i)
       ! return the index of a random nonzero value in the
       ! real-valued 1d array `arr`
@@ -101,30 +119,6 @@ module mc
         stop
       end if
     end function rand_nonzero_real
-
-    function rand_nonzero_real_2d(arr) result(i)
-      ! return the index of a random nonzero value in the
-      ! real-valued 2d array `arr`. note that pack compresses
-      ! the array into 1d, so this will return the 1d index;
-      ! you have to figure out the indexing yourself
-      real(kind=CF), intent(in) :: arr(:, :)
-      real(kind=CF) :: r
-      integer(kind=CI) :: i, sa(2)
-      integer(kind=CI), allocatable :: ind(:)
-      real(kind=CF), allocatable :: arr_1d(:)
-      sa = shape(arr)
-      arr_1d = reshape(arr, (/product(sa)/))
-      ind = pack([(i, i = 1_CI, size(arr_1d))], arr_1d.gt.0.0_CF)
-      call random_number(r)
-      i = ind(ceiling(r * size(ind)))
-      if ((i.lt.1_CI).or.(i.gt.size(arr))) then
-        write(*, *) "invalid i returned by rand_nonzero_real"
-        write(*, *) "input array: ", arr
-        write(*, *) "index array: ", ind
-        write(*, *) "rand(): ", r
-        stop
-      end if
-    end function rand_nonzero_real_2d
 
     function rand_true(arr) result(i)
       ! same again for a boolean 1d array
@@ -160,9 +154,20 @@ module mc
     subroutine abundances()
       ! at the start of each run, randomise which sites have each state
       ! based on the abundance fractions
-      integer(kind=CI) :: site, state, n_present, rand_site
+      integer(kind=CI) :: site, state, n_present, rand_site, nn, site2, i
       logical(kind=CB) :: current(n_sites)
       is_present = .true.
+      ! turn all the rates on, then zero them as needed
+      write(*, *) shape(gen_rates)
+      do site = 1, n_sites
+        gen_rates(site, :)      = xsec
+        ann_rates(site, :, :)   = ann
+        intra_rates(site, :, :) = intra
+        do site2 = 1, coord
+          hop_rates(site, :, site2) = hop
+        end do
+      end do
+
       do state = 1, n_s
         ! use the rand_true function above to keep track of which
         ! sites we've picked already so we don't double count
@@ -179,16 +184,33 @@ module mc
             ! setting rand_site to false excludes it from the next
             ! call to rand_true so we always set the right number of falses
             current(rand_site) = .false.
+            ! zero out the relevant rates for this state and site
+            gen_rates(rand_site, state) = 0.0_CF
+            intra_rates(rand_site, state, :) = 0.0_CF
+            intra_rates(rand_site, :, state) = 0.0_CF
+            ann_rates(rand_site, state, :) = 0.0_CF
+            ann_rates(rand_site, :, state) = 0.0_CF
+
+            ! to zero out the hop rates correctly, first zero out
+            ! all the rates for hopping from this state on this site
+            do site2 = 1, coord
+              nn = neighbours(rand_site, site2)
+              hop_rates(rand_site, state, nn) = 0.0_CF
+            end do
+            ! then loop over all sites and zero out all the hopping
+            ! rates *to* this state from the site's neighbours
+            do site2 = 1, n_sites
+              do i = 1, coord
+                if (neighbours(site2, i).eq.rand_site) then
+                  hop_rates(site2, state, i) = 0.0_CF
+                end if
+              end do
+            end do
+
           end do
-          write(*, '(a, I0, a, F4.2)') "abundance(", state,&
-            ") = ", abundance(state)
-          write(*, '(a, I0)') "number of trues = ", count(is_present(:, state))
-          write(*, '(a, I0)') "number there should be = ",&
-            nint(abundance(state) * n_sites)
-          write(*, *) is_present(:, state)
-          write(*, *)
         end if
       end do
+
     end subroutine abundances
 
     subroutine zero_move(m)
@@ -217,103 +239,82 @@ module mc
       end do
     end subroutine construct_pulse
 
-    subroutine possible_moves_and_rates(site, ft)
+    subroutine possible_moves(site, ft)
+      ! site - integer index into n_sites
       real(kind=CF), intent(in) :: ft 
-      integer(kind=CI), intent(in) :: site
-      integer(kind=CI) :: i, j, s1, s2, nn, p
-      integer(kind=CI), allocatable :: present_states(:)
-      ! make sure arrays are zeroed
-      gen_rates   = 0.0_CF
-      se_rates    = 0.0_CF
-      hop_rates   = 0.0_CF
-      intra_rates = 0.0_CF
-      ann_rates   = 0.0_CF
+      integer, intent(in) :: site
+      integer :: state
       possible = .false._CB
-      ! only insert rates that correspond to states present on this site
-      ! (cf. abundances subroutine)
-      present_states = pack([(i, i = 1_CI, n_s)], is_present(site, :))
-
-      do i = 1, size(present_states)
-        s1 = present_states(i)
-
-        p = which_p(s1)
-        gen_rates(s1) = ft * xsec(s1) * (n_tot(p) - n_i(site, s1)) / n_tot(p)
-        if (gen_rates(s1).gt.0.0_CF) then
-          possible(1) = .true._CB
-        end if
-
-        se_rates(s1)  = ft * xsec(s1) * n_i(site, s1) / n_tot(p)
-        if (se_rates(s1).gt.0.0_CF) then
-          possible(2) = .true._CB
-        end if
-
-        if (any(hop.gt.0.0_CF)) then
-          ! only bother with this if there is hopping in the first place
-          do j = 1, coord
-            nn = neighbours(site, j)
-            if (nn.gt.0_CI.and.is_present(nn, s1)) then
-              possible(3) = .true._CB
-              hop_rates(s1, j) = n_i(site, s1) * hop(s1)
-              p = which_p(s1)
-              if (n_i(site, s1).lt.n_i(nn, s1)) then
-                ! entropic penalty for hopping to a higher-occupied site
-                hop_rates(s1, j) = hop_rates(s1, j) * &
-                  (n_i(site, s1) * (n_thermal(p) - n_i(nn, s1))) /&
-                ((n_i(nn, s1) + 1) * (n_thermal(p) - n_i(site, s1) + 1))
-              end if
-            end if
-          end do
-        end if
-
-        do j = 1, size(present_states)
-          s2 = present_states(j)
-
-          intra_rates(s1, s2) = n_i(site, s1) * intra(s1, s2)
-          if (s1 == s2) then
-            ann_rates(s1, s2) = n_i(site, s1) * ((n_i(site, s1) - 1) / 2.0) * &
-              ann(s1, s2)
-            ! diagonal intra rate -> decay
-            if (intra_rates(s1, s2).gt.0.0_CF) then
-              possible(5) = .true._CB
-            end if
-          else
-            ann_rates(s1, s2) = n_i(site, s1) * n_i(site, s2) * ann(s1, s2)
-            ! off-diagonal intra rate -> transfer between states
-            if (intra_rates(s1, s2).gt.0.0_CF) then
-              possible(4) = .true._CB
-            end if
-          end if
-
-          if (ann_rates(s1, s2).gt.0.0_CF) then
-            possible(6) = .true._CB
-          end if
-
-        end do
-      end do
-
-      do i = 1, n_s
-        if ((.not.is_present(site, i))) then
-          if (any(ann_rates(i, :).gt.0.0_CF)&
-            .or.any(ann_rates(:, i).gt.0.0_CF)) then
-            write(*, *) "is_present(", site, ", ", i, ") = ", is_present(site, i)
-            write(*, *) "nonzero ann_rate: "
-            do j = 1, n_s
-              write(*, *) ann_rates(j, :)
-            end do
-            stop
-          end if
+      ! check that no process has reduced population where it shouldn't
+      ! - don't think this could ever happen but checking it
+      if (any(n_i(site, :).lt.0)) then
+        write(*, *) "negative population on site", site, n_i(site, :)
+        write(*, *) "current move", cm
+        stop
+      end if
+      
+      do state = 1, n_s
+        if ((.not.is_present(site, state)).and.(n_i(site, state).gt.0_CI)) then
+          write(*, *) "population on forbidden state!"
+          write(*, '(a, I0, a, I0)') "site = ", site, " state = ", state
+          write(*, *) is_present(site, :)
+          stop
         end if
       end do
-    end subroutine possible_moves_and_rates
+      ! if the pulse is on (ft) and there's a positive cross section
+      ! then excitations can be generated. in general the second part
+      ! should always be true, i guess, otherwise what are we doing here
+      if ((ft.gt.0.0_CF).and.(any(gen_rates(site, :).gt.0.0_CF))) then
+        ! there is a state on this site that can absorb
+        possible(1) = .true.
+        if (dot_product(n_i(site, :), gen_rates(site, :)).gt.0.0_CF) then
+          ! for SE to be possible there must be population on a
+          ! site that can also generate excitations; the dot product
+          ! of n_i and gen_rates can only be > 0 if this is true
+          possible(2) = .true.
+        end if
+      end if
+
+      ! only bother checking for hops if there's a nonzero rate
+      if (any(hop.gt.0.0_CF)) then
+        hoploop: do state = 1, n_s
+          if (any(n_i(site, state) * hop_rates(site, state, :).gt.0.0_CF)) then
+            possible(3) = .true._CB
+            ! we've found one, so it's possible; stop checking
+            exit hoploop
+          end if
+        end do hoploop
+      end if
+
+      decayloop: do state = 1, n_s
+        if (n_i(site, state)*intra_rates(site, state, state).gt.0.0_CF) then
+          possible(5) = .true._CB
+          exit decayloop
+        end if
+      end do decayloop
+
+      if ((n_s.gt.1).and.(any(n_i(site, :).gt.0))) then
+        ! for transfer between states to be possible, there
+        ! must be more than one state on the protein
+        possible(4) = .true._CB
+      end if
+
+      if ((sum(n_i(site, :)).gt.1_CI).and.&
+        (any(ann_rates(site, :, :).gt.0.0_CF))) then
+        ! this is not strictly true in all cases but much quicker
+        possible(6) = .true._CB
+      end if
+
+    end subroutine possible_moves
 
     subroutine propose(site, ft)
       integer, intent(in) :: site
       real(kind=CF), intent(in) :: ft 
-      integer :: s, s2, nn, n_eff
+      integer :: s, s2, nn, n_eff, p
       ! make sure there's no leftover stuff in current_move
       ! that might mess with this
       call zero_move(cm)
-      call possible_moves_and_rates(site, ft)
+      call possible_moves(site, ft)
       ! indices where possible is true
       if (.not.any(possible)) then
         ! something has gone badly wrong somewhere
@@ -330,28 +331,33 @@ module mc
         ! generation
         ! need to pick a non-zero cross section and make note of
         ! which index that cross section is at
-        s = rand_nonzero_real(gen_rates) ! which state is it
-        cm%rate = gen_rates(s)
+        s = rand_nonzero_real(gen_rates(site, :)) ! which state is it
+        p = which_p(s) ! which pigment is this state on
+        cm%rate = ft * gen_rates(site, s) * (n_tot(p) - n_i(site, s)) / n_tot(p)
         cm%ist = s
         cm%fst = s
         cm%loss_index = s
       case (2)
         ! stimulated emission
-        s = rand_nonzero_real(gen_rates) ! which state is it
-        cm%rate = se_rates(s)
+        s = rand_nonzero_real(gen_rates(site, :))
+        p = which_p(s)
+        cm%rate = ft * gen_rates(site, s) * n_i(site, s) / n_tot(p)
         cm%ist = s
         cm%fst = s
-        ! this assumes there's only one protein in the system
-        ! site.e. it'll need changing if there are multiple proteins
         cm%loss_index = n_s + s
       case (3)
         ! hop
-        s2 = rand_nonzero_real_2d(hop_rates)
-        ! split the returned index (hop is a n_s x coord matrix)
-        ! fortran is column-major!!!
-        s = mod(s2 - 1, n_s) + 1
-        nn = ((s2 - 1) / n_s) + 1
-        cm%rate = hop_rates(s, nn)
+        s = rand_nonzero_int(n_i(site, :))
+        s2 = rand_nonzero_int(neighbours(site, :))
+        nn = neighbours(site, s2)
+        p = which_p(s)
+        ! this will be zero if the state s does not exist on nn
+        cm%rate = n_i(site, s) * hop_rates(site, s, nn)
+        if (n_i(site, s).lt.n_i(nn, s)) then
+          ! entropic penalty for hopping to a higher-occupied site
+          cm%rate = cm%rate * (n_i(site, s) * (n_thermal(p) - n_i(nn, s))) /&
+          ((n_i(nn, s) + 1) * (n_thermal(p) - n_i(site, s) + 1))
+        end if
         cm%ist = s
         cm%fsi = nn
         cm%fst = s
@@ -359,52 +365,29 @@ module mc
       case (4)
         ! transfer
         ! pick a state with a nonzero rate
-        nn = rand_nonzero_real_2d(intra_rates)
-        ! split the returned 1d index (intra is a square n_s x n_s matrix)
-        s = mod(nn - 1, n_s) + 1
-        s2 = ((nn - 1) / n_s) + 1
+        s = rand_nonzero_int(n_i(site, :))
+        s2 = rand_int(n_s)
         do while (s2.eq.s)
           ! intra has decays on the diagonal and transfer rates off-diagonal
           ! so ensure we've picked an off-diagonal element
-          nn = rand_nonzero_real_2d(intra_rates)
-          s = mod(nn - 1, n_s) + 1
-          s2 = ((nn - 1) / n_s) + 1
+          s2 = rand_int(n_s)
         end do
-        if (intra_rates(s, s2).eq.0.0_CF) then
-          write(*, *) "picked a zero rate from nonzero?"
-          write(*, *) nn, s, s2
-          do n_eff = 1, n_s
-            write(*, *) intra_rates(n_eff, :)
-          end do
-        end if
-        cm%rate = intra_rates(s, s2)
+        cm%rate = n_i(site, s) * intra_rates(site, s, s2)
         cm%ist = s
         cm%fst = s2
         cm%loss_index = (4 + (s - 1)) * n_s + s2
       case (5)
         ! decay
-        nn = rand_nonzero_real_2d(intra_rates)
-        s = mod(nn - 1, n_s) + 1
-        s2 = ((nn - 1) / n_s) + 1
-        do while (s2.ne.s)
-          ! intra has decays on the diagonal, so
-          ! ensure we've picked a diagonal element
-          nn = rand_nonzero_real_2d(intra_rates)
-          s = mod(nn - 1, n_s) + 1
-          s2 = ((nn - 1) / n_s) + 1
-        end do
-        cm%rate = intra_rates(s, s2)
+        s = rand_nonzero_int(n_i(site, :))
+        cm%rate = n_i(site, s) * intra_rates(site, s, s)
         cm%ist = s
         cm%fst = s
         cm%emissive = emissive(s)
         cm%loss_index = (3 * n_s) + s
       case (6)
         ! annihilation
-        ! pick a state with a nonzero annihilation rate
-        nn = rand_nonzero_real_2d(ann_rates)
-        ! split the returned 1d index (ann is a square n_s x n_s matrix)
-        s = mod(nn - 1, n_s) + 1
-        s2 = ((nn - 1) / n_s) + 1
+        s = rand_nonzero_int(n_i(site, :))
+        s2 = rand_nonzero_int(n_i(site, :))
         ! sort so that s < s2. if we generate a pair of columns in the
         ! histogram for each annihilation process, this ensures that
         ! all annihilation events go in one of them to make counting
@@ -416,7 +399,11 @@ module mc
           s = s2
           s2 = n_eff
         end if
-        cm%rate = ann_rates(s, s2)
+        if (s.eq.s2) then
+          cm%rate = n_i(site, s) * (n_i(site, s) / 2.0) * ann_rates(site, s, s)
+        else
+          cm%rate = n_i(site, s) * n_i(site, s2) * ann_rates(site, s, s2)
+        end if
         cm%loss_index = (4 + n_s + (s - 1)) * n_s + s2
         cm%ist = s
         cm%fst = s2
@@ -479,7 +466,7 @@ module mc
         s = rand_int(n_sites)
 
         ! first pick a random site, check if any moves are possible
-        call possible_moves_and_rates(s, ft)
+        call possible_moves(s, ft)
         n_poss = count(possible)
         if (n_poss.eq.0) then
           ! if not just try again
@@ -530,7 +517,7 @@ module mc
           end if
 
           ! check if any more moves are possible now
-          call possible_moves_and_rates(s, ft)
+          call possible_moves(s, ft)
 
           if (.not.any(possible)) then
             exit moveloop
@@ -553,17 +540,16 @@ module mc
 
       call init_random(salt)
 
+      allocate(gens(n_sites), source=0_CI)
+      allocate(anns(n_sites), source=0_CI)
+      allocate(gen_rates(n_sites, n_s), source=0.0_CF)
+      allocate(hop_rates(n_sites, n_s, coord), source=0.0_CF)
+      allocate(intra_rates(n_sites, n_s, n_s), source=0.0_CF)
+      allocate(ann_rates(n_sites, n_s, n_s), source=0.0_CF)
+
       ! abundance call should go here, at the start of each run
       ! and after random init but before we do anything
       call abundances()
-
-      allocate(gens(n_sites), source=0_CI)
-      allocate(anns(n_sites), source=0_CI)
-      allocate(gen_rates(n_s), source=0.0_CF)
-      allocate(se_rates(n_s), source=0.0_CF)
-      allocate(hop_rates(n_s, coord), source=0.0_CF)
-      allocate(intra_rates(n_s, n_s), source=0.0_CF)
-      allocate(ann_rates(n_s, n_s), source=0.0_CF)
 
       counts = 0_CI
       tot_accepted = 0_CI
@@ -687,7 +673,6 @@ module mc
       deallocate(gens)
       deallocate(anns)
       deallocate(gen_rates)
-      deallocate(se_rates)
       deallocate(hop_rates)
       deallocate(intra_rates)
       deallocate(ann_rates)

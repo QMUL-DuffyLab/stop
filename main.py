@@ -81,13 +81,21 @@ if __name__ == "__main__":
         connected = "detergent"
     else:
         connected = "aggregate"
-    # fortran will not know about OS directory separators, so
-    # just add an extra one at the end of the path for it
+    abundance_str = ""
+    for i, ab in enumerate(protein['abundance']):
+        if ab < 1.0:
+            abundance_str += f"{protein['state_names'][i]}_{ab:4.2f}"
     fstr = np.format_float_scientific(simulation_json['fluence'])
     rstr = np.format_float_scientific(simulation_json['rep_rate'])
     outdir = os.path.join(args.outdir,
-            f"{args.protein}", connected, f"fluence_{fstr}",
-                          f"rep_rate_{rstr}", "")
+            f"{args.protein}", connected,
+            f"fluence_{fstr}", f"rep_rate_{rstr}")
+    # add abundance information if it's there
+    if len(abundance_str) > 1:
+        outdir = os.path.join(outdir, abundance_str)
+    # fortran will not know about OS directory separators, so
+    # just add an extra one at the end of the path for it
+    outdir = os.path.join(outdir, "")
     os.makedirs(outdir, exist_ok=True)
     print(f"Output directory: {outdir}")
 

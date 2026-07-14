@@ -131,6 +131,8 @@ module io
       do i = 1, n_s
         write(*, *) ann_remainder(i, :)
       end do
+      write(*, *) "xsec"
+      write(*, *) xsec
 
       deallocate(dist_temp)
       deallocate(intra_temp)
