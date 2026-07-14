@@ -65,7 +65,7 @@ A few things to note:
 - the reason for the names is to generate columns for the histogram that the Fortran outputs, to make it more obvious which column corresponds to which thing.
 - for `intra`, the convention I've used is that off-diagonal elements denote transition times between different states in the protein, and the diagonal elements indicate decay times.
 - `n_tot` and `n_thermal` should be of length `n_p` since they refer to the actual pigments; for example, there are 42 chlorophylls in an LHCII trimer, of which 24 (the Chl *a*s) are thermally accessible. We use these to check stimulated emission and intra-protein transfer rates.
-- `abundance` doesn't do anything yet - I haven't added the logic for it. will update when that's done.
+- `abundance` controls what fraction of sites have the given state on them. the fortran will take these fractions and randomise which specific sites have which states on them, separately for each core and each repeat
 - `ann_remainder` is set up the way it is because it is not always trivial which state will be left after an annihilation event; this removes any uncertainty by making you figure it out and write it down, rather than me writing some weird bit of code to just have a guess for you.
 
 Check the included file for examples, as mentioned above.
@@ -84,6 +84,7 @@ This is a simpler little file. I think that most if not all of these should be s
 - `binwidth` is the binwidth of the histogram
 - `n_counts` is how many counts you want. really shouldn't have to explain this one
 - `n_repeats` is how many repeats you want to do
+- `debug` should be true or false. if true, the fortran will output some extra stuff about move statistics that you probably don't need
 
 Note: The fitting code will output various CSV and text files containing the fitted arrays, details of the fits and errors and so on, but it doesn't do anything sophisticated to compare the fit between repeats.
 
