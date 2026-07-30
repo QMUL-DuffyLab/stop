@@ -536,7 +536,7 @@ module mc
       integer(kind=CI) :: tot_accepted(6)
       integer(kind=CI) :: i, j, curr_maxcount, nunit
       integer(kind=CI), allocatable :: ec(:)
-      character(200) :: out_file_path, outfile, pop_file
+      character(200) :: pop_header, out_file_path, outfile, pop_file
       logical(kind=CB) :: skip, bin_pulse
 
       call init_random(salt)
@@ -567,7 +567,10 @@ module mc
 
       write(pop_file, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_population.csv"
+      write(pop_header, '(a, i0, a)') "(a, 1X, ", n_s, "(a, 1X), a)"
       open(newunit=nunit, file=pop_file)
+      write(nunit, pop_header) "Rep number",&
+        (trim(adjustl(s_names(i))), i=1,n_s), "rep end time"
 
       reploop: do while (curr_maxcount.lt.max_counts)
 
