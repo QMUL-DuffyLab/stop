@@ -10,5 +10,4 @@ dependencies:
   - pandas
   - scipy
   - sympy
-
-prefix: "/home/callum/miniforge3/envs/stop"
+  - pyqt6
