@@ -6,26 +6,7 @@ from PyQt6 import QtCore, QtWidgets, QtGui
 from PyQt6.QtCore import Qt
 import json
 from PyQt6.QtWidgets import (QLineEdit, QPushButton, QApplication,
-    QVBoxLayout, QHBoxLayout, QSpinBox, QTableWidget, QDialog)
-
-
-class Widge(QtWidgets.QWidget):
-    def __init__(self):
-        super().__init__()
-
-        self.hello = ["allo m8", "fook off m8", "wassup lad", "piss off idiot"]
-        
-        self.button = QtWidgets.QPushButton("Click me!")
-        self.text = QtWidgets.QLabel("Hello World")
-
-        self.layout = QtWidgets.QVBoxLayout(self)
-        self.layout.addWidget(self.text)
-        self.layout.addWidget(self.button)
-
-        self.button.clicked.connect(self.magic)
-
-    def magic(self):
-        self.text.setText(random.choice(self.hello))
+    QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QSpinBox, QTableWidget)
 
 class MatrixTable(QTableWidget):
     def __init__(self, table_name, state_names, block_diagonal=False):
@@ -51,7 +32,7 @@ class MatrixTable(QTableWidget):
 class NameNumber(QtWidgets.QWidget):
     def __init__(self, parent=None):
         QtWidgets.QWidget.__init__(self, parent=parent)
-        layout = QVBoxLayout(self)
+        layout = QGridLayout(self)
         self.protein_name = QLineEdit("Enter protein name")
         self.n_p = QSpinBox()
         self.n_p.setRange(1, 20)
@@ -59,9 +40,12 @@ class NameNumber(QtWidgets.QWidget):
         self.n_s = QSpinBox()
         self.n_s.setRange(self.n_p.value(), 20)
         self.n_s.setValue(2)
-        layout.addWidget(self.protein_name)
-        layout.addWidget(self.n_p)
-        layout.addWidget(self.n_s)
+        layout.addWidget(QLabel("Protein name:"), 0, 0)
+        layout.addWidget(self.protein_name, 0, 1)
+        layout.addWidget(QLabel("Number of pigments:"), 1, 0)
+        layout.addWidget(self.n_p, 1, 1)
+        layout.addWidget(QLabel("Number of states:"), 2, 0)
+        layout.addWidget(self.n_s, 2, 1)
 
 class ProteinBuilder(QtWidgets.QWidget):
     def __init__(self, parent=None):
@@ -69,7 +53,7 @@ class ProteinBuilder(QtWidgets.QWidget):
         layout = QVBoxLayout()
 
         nameNumber = NameNumber()
-        self.protein_name = nameNumber.protein_name.value()
+        self.protein_name = nameNumber.protein_name.text()
         self.n_p = nameNumber.n_p.value()
         self.n_s = nameNumber.n_s.value()
 
