@@ -85,7 +85,9 @@ class MatrixTables(QtWidgets.QWidget):
 class NameNumber(QtWidgets.QWidget):
     def __init__(self, data, parent=None):
         QtWidgets.QWidget.__init__(self, parent=parent)
-        layout = QGridLayout(self)
+        layout = QVBoxLayout(self)
+        gl = QGridLayout(self)
+        self.data = data
         self.protein_name = QLineEdit()
         self.n_p = QSpinBox()
         self.n_p.setRange(1, 20)
@@ -93,17 +95,35 @@ class NameNumber(QtWidgets.QWidget):
         self.n_s = QSpinBox()
         self.n_s.setRange(self.n_p.value(), 20)
         self.n_s.setValue(2)
-        layout.addWidget(QLabel("Protein name:"), 0, 0)
-        layout.addWidget(self.protein_name, 0, 1)
-        layout.addWidget(QLabel("Number of pigments:"), 1, 0)
-        layout.addWidget(self.n_p, 1, 1)
-        layout.addWidget(QLabel("Number of states:"), 2, 0)
-        layout.addWidget(self.n_s, 2, 1)
+        self.namePigmentStates = None
+        gl.addWidget(QLabel("Protein name:"), 0, 0)
+        gl.addWidget(self.protein_name, 0, 1)
+        gl.addWidget(QLabel("Number of pigments:"), 1, 0)
+        gl.addWidget(self.n_p, 1, 1)
+        gl.addWidget(QLabel("Number of states:"), 2, 0)
+        gl.addWidget(self.n_s, 2, 1)
+        layout.addLayout(gl)
 
-    def updateData(self, data):
-        data["name"] = self.protein_name.text()
-        data["n_pigments"] = self.n_p.value()
-        data["n_states"] = self.n_s.value()
+        btnNext = QtWidgets.QPushButton("Next")
+        btnNext.clicked.connect(self.showNamePigmentStates)
+        btnLayout = QHBoxLayout()
+        btnLayout.addWidget(btnNext)
+
+        layout.addLayout(btnLayout)
+        self.setLayout(layout)
+        print(f"NN: parent.type = {type(self.parent)}")
+        print(f"NN: parent = {self.parent}")
+
+    def updateData(self):
+        self.data["name"]       = self.protein_name.text()
+        self.data["n_pigments"] = self.n_p.value()
+        self.data["n_states"]   = self.n_s.value()
+
+    def showNamePigmentStates(self):
+        self.updateData()
+        if self.namePigmentStates is None:
+            self.namePigmentStates = NamePigmentsStates(self.data, self.parent)
+        self.namePigmentStates.show()
 
 class NamePigmentsStates(QtWidgets.QWidget):
     def __init__(self, data, parent=None):
@@ -152,7 +172,7 @@ class NamePigmentsStates(QtWidgets.QWidget):
     def showPigmentProperties(self):
         self.updateData()
         if self.pigmentProperties is None:
-            self.pigmentProperties = PigmentProperties(self.data)
+            self.pigmentProperties = PigmentProperties(self.data, self.parent)
         self.pigmentProperties.show()
         print(f"NPS exit: self.data = {self.data}")
 
@@ -217,34 +237,24 @@ class PigmentProperties(QtWidgets.QWidget):
     def showMatrixTables(self):
         self.updateData()
         if self.matrixTables is None:
-            self.matrixTables = MatrixTables(self.data)
+            self.matrixTables = MatrixTables(self.data, self.parent)
         self.matrixTables.show()
         print(f"PP exit: self.data = {self.data}")
 
-class ProteinBuilder(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        QtWidgets.QWidget.__init__(self, parent=parent)
+class ProteinBuilder(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Protein Builder")
+        self.setFixedSize(1000, 600)
         self.data = {}
         layout = QVBoxLayout(self)
+        print(f"PB: self type: {type(self)}")
 
-        self.nameNumber = NameNumber(self.data)
+        self.nameNumber = NameNumber(self.data, parent=self)
         self.namePigmentStates = None
         self.pigmentProperties = None
         layout.addWidget(self.nameNumber)
-
-        btnNext = QtWidgets.QPushButton("Next")
-        btnNext.clicked.connect(self.showNamePigmentStates)
-        btnLayout = QHBoxLayout()
-        btnLayout.addWidget(btnNext)
-
-        layout.addLayout(btnLayout)
-        self.setLayout(layout)
-
-    def showNamePigmentStates(self):
-        self.nameNumber.updateData(self.data)
-        if self.namePigmentStates is None:
-            self.namePigmentStates = NamePigmentsStates(self.data)
-        self.namePigmentStates.show()
+        self.setCentralWidget(self.nameNumber)
 
 if __name__ == "__main__":
     app =QtWidgets.QApplication([])
