@@ -4,6 +4,7 @@
 # doc.qt.io/qtforpython-6/examples/example_widgets_itemviews_jsonmodel.html
 
 import sys
+import os
 import random
 import numpy as np
 from PyQt6 import QtCore, QtWidgets, QtGui
@@ -27,28 +28,121 @@ quantities to the parent QWizard when the user presses next on each screen
 
 '''
 
+class loadExisting(QWizardPage):
+    def __init__(self, parent):
+        QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.setTitle("Protein Builder")
+        self.setSubTitle('''
+If you'd like to import existing protein data, you can do that here.
+Otherwise, click Next to start specifying the parameters of your protein.
+                         ''')
+
+    def initializePage(self):
+        layout = QVBoxLayout()
+        gl = QGridLayout()
+        self.filename = QLineEdit()
+        self.load_success = False
+        self.browseButton = QPushButton("Browse") 
+        self.browseButton.clicked.connect(self.onBrowseButton)
+        self.loadButton = QPushButton("Load") 
+        self.loadButton.clicked.connect(self.onLoadButton)
+        self.proteinChooser = QComboBox()
+        self.resetButton = QPushButton("Reset")
+        self.resetButton.clicked.connect(self.onResetButton)
+        gl.addWidget(QLabel("Filename:"), 0, 0)
+        gl.addWidget(self.filename, 0, 1)
+        gl.addWidget(self.browseButton, 0, 2)
+        gl.addWidget(self.loadButton, 0, 3)
+        gl.addWidget(QLabel("Protein name:"), 1, 0)
+        gl.addWidget(self.proteinChooser, 1, 1)
+        gl.addWidget(self.resetButton, 1, 2)
+        layout.addLayout(gl)
+        self.setLayout(layout)
+
+    def load_from_file(self):
+        print(self.filename.text())
+        with open(self.filename.text()) as f:
+            try:
+                self.data = json.load(f)
+                print(self.data)
+                success = True
+            except:
+                self.data = {}
+                print("JSON load failed.")
+                # TODO: make a QMessageBox for this
+                success = False
+        return success
+
+    def onBrowseButton(self):
+        self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
+                                              os.getcwd(),
+                                              "JSON file (*.json)")
+        self.filename.setText(self.fn)
+
+    def onLoadButton(self):
+        self.load_success = self.load_from_file()
+        if self.load_success:
+            protein_names = self.data.keys()
+            for name in protein_names:
+                self.proteinChooser.addItem(name)
+            # make a QMessageBox here explaining if it fails
+
+    def onResetButton(self):
+        self.load_success = False
+        self.filename.setText("")
+        self.proteinChooser.clear()
+        self.data = {}
+        self.parent.data = {}
+
+    def updateData(self):
+        if self.load_success:
+            name = self.proteinChooser.currentText()
+            self.parent.data = self.data[name]
+            self.parent.data['name'] = name
+        else:
+            self.parent.data = {}
+
+    def validatePage(self):
+        self.updateData()
+        print(f"LE exit: data = {self.parent.data}")
+        return True
+
 class nameNumber(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
         layout = QVBoxLayout()
         gl = QGridLayout()
-        protein_name = QLineEdit()
-        self.registerField('protein_name', protein_name, "text")
-        n_p = QSpinBox()
-        n_p.setRange(0, 20)
-        self.registerField('n_p', n_p)
-        n_s = QSpinBox()
-        n_s.setRange(n_p.value(), 20)
-        self.registerField('n_s', n_s)
+        self.protein_name = QLineEdit()
+        self.registerField('protein_name', self.protein_name, "text")
+        self.n_p = QSpinBox()
+        self.registerField('n_p', self.n_p)
+        self.n_s = QSpinBox()
+        self.registerField('n_s', self.n_s)
         gl.addWidget(QLabel("Protein name:"), 0, 0)
-        gl.addWidget(protein_name, 0, 1)
+        gl.addWidget(self.protein_name, 0, 1)
         gl.addWidget(QLabel("Number of pigments:"), 1, 0)
-        gl.addWidget(n_p, 1, 1)
+        gl.addWidget(self.n_p, 1, 1)
         gl.addWidget(QLabel("Number of states:"), 2, 0)
-        gl.addWidget(n_s, 2, 1)
+        gl.addWidget(self.n_s, 2, 1)
         layout.addLayout(gl)
         self.setLayout(layout)
+
+    def initializePage(self):
+        if 'name' in self.parent.data.keys():
+            self.protein_name.setText(self.parent.data['name'])
+        else:
+            self.protein_name.setText("")
+        if 'n_p' in self.parent.data.keys():
+            self.n_p.setValue(self.parent.data['n_p'])
+        else:
+            self.n_p.setValue(0)
+        if 'n_s' in self.parent.data.keys():
+            self.n_s.setValue(self.parent.data['n_s'])
+        else:
+            self.n_s.setValue(0)
+        self.n_s.setRange(self.n_p.value(), 20)
 
     def updateData(self):
         '''
@@ -57,10 +151,10 @@ class nameNumber(QWizardPage):
         the names of the fields so that they can be cleaned
         up by cleanupPage()
         '''
-        self.parent.data["name"]       = self.field('protein_name')
-        self.parent.data["n_pigments"] = self.field('n_p')
-        self.parent.data["n_states"]   = self.field('n_s')
-        self.fields = ["name", "n_pigments", "n_states"]
+        self.parent.data["name"] = self.field('protein_name')
+        self.parent.data["n_p"]  = self.field('n_p')
+        self.parent.data["n_s"]  = self.field('n_s')
+        self.fields = ["name", "n_p", "n_s"]
 
     def checkData(self):
         '''
@@ -74,11 +168,11 @@ class nameNumber(QWizardPage):
             validated = False
             # NB: checking string legality??
 
-        if self.parent.data["n_pigments"] <= 0:
+        if self.parent.data["n_p"] <= 0:
             msgs.append("Number of pigments must be > 0.")
             validated = False
 
-        if self.parent.data["n_states"] <= 0:
+        if self.parent.data["n_s"] <= 0:
             msgs.append("Number of states must be > 0.")
             validated = False
 
@@ -100,34 +194,60 @@ class namePigmentsStates(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
+        self.layout = QVBoxLayout()
+        self.pl = QGridLayout()
+        self.sl = QGridLayout()
+        self.layout.addLayout(self.pl)
+        self.layout.addLayout(self.sl)
+        self.setLayout(self.layout)
 
     def initializePage(self):
-        n_p = self.field('n_p')
-        n_s = self.field('n_s')
-        layout = QVBoxLayout()
-        pl = QGridLayout()
-        sl = QGridLayout()
-
+        self.n_p = self.field('n_p')
+        self.n_s = self.field('n_s')
         self.pigment_names = []
         self.state_names = []
-        for i in range(n_p):
-            pl.addWidget(QLabel(f"Name of pigment {i + 1:d}:"), i, 0)
+        for i in range(self.n_p):
+            self.pl.addWidget(QLabel(f"Name of pigment {i + 1:d}:"), i, 0)
             current_name = QLineEdit()
             self.pigment_names.append(current_name)
-            self.registerField(f"pigment_name{i + 1:d}", current_name)
-            pl.addWidget(current_name, i, 1)
-        for i in range(n_s):
-            sl.addWidget(QLabel(f"Name of state {i + 1:d}:"), i, 0)
+            #self.registerField(f"pigment_name{i + 1:d}", current_name)
+            self.pl.addWidget(current_name, i, 1)
+        for i in range(self.n_s):
+            self.sl.addWidget(QLabel(f"Name of state {i + 1:d}:"), i, 0)
             current_state = QLineEdit()
             self.state_names.append(current_state)
-            sl.addWidget(current_state, i, 1)
-            self.registerField(f"state_name{i + 1:d}", current_state)
-        layout.addLayout(pl)
-        layout.addLayout(sl)
-        self.setLayout(layout)
+            #self.registerField(f"state_name{i + 1:d}", current_state)
+            self.sl.addWidget(current_state, i, 1)
+        '''
+        check if there's data loaded and fill values if so
+        '''
+        keys = ["pigment_names", "state_names"]
+        boxlists = [self.pigment_names, self.state_names]
+        for k, b in zip(keys, boxlists):
+            if k in self.parent.data:
+                names = self.parent.data[k]
+            else:
+                names = ["" for _ in range(self.n_p)]
+            for i, n in enumerate(names):
+                b[i].setText(n)
+    
+    def cleanupPage(self):
+        self.pigment_names = []
+        self.state_names = []
+        self.n_p = 0
+        self.n_s = 0
+        for item in self.pigment_names:
+            item.setText("")
+        for item in self.state_names:
+            item.setText("")
+        for layout in self.pl, self.sl:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget:
+                    child.widget().deleteLater()
+
 
     def updateData(self):
-        print(self.pigment_names)
         self.parent.data["pigment_names"] = [p.text()
                                         for p in self.pigment_names]
         self.parent.data["state_names"]   = [s.text()
@@ -142,7 +262,7 @@ class namePigmentsStates(QWizardPage):
         data = self.parent.data
 
         for name_string, n_string in zip(
-            ['pigment_names', 'state_names'], ['n_pigments', 'n_states']):
+            ['pigment_names', 'state_names'], ['n_p', 'n_s']):
             nsmsg = name_string.replace("_", " ")
 
             if any([len(p) == 0 for p in data[name_string]]):
@@ -171,42 +291,57 @@ class namePigmentsStates(QWizardPage):
 class pigmentProperties(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.layout = QVBoxLayout()
+        self.pl = QGridLayout()
+        self.layout.addLayout(self.pl)
+        self.setLayout(self.layout)
+        self.n_s = 0
+        # column headers
+        self.pl.addWidget(QLabel("Hopping time (s)"), 0, 1)
+        self.pl.addWidget(QLabel("Decay time (s)"), 0, 2)
+        self.pl.addWidget(QLabel("Cross-section (cm^{-1})"), 0, 3)
+        self.pl.addWidget(QLabel("Emissive decay?"), 0, 4)
+        self.pl.addWidget(QLabel("Pigment"), 0, 5)
 
     def initializePage(self):
-        n_s = self.field("n_s")
-        layout = QVBoxLayout()
-        pl = QGridLayout()
+        self.n_s = self.field("n_s")
         self.hop      = []
         self.decay    = []
         self.xsec     = []
         self.emissive = []
         self.which_p  = []
-
-        # column headers
-        pl.addWidget(QLabel("Hopping time (s)"), 0, 1)
-        pl.addWidget(QLabel("Decay time (s)"), 0, 2)
-        pl.addWidget(QLabel("Cross-section (cm^{-1})"), 0, 3)
-        pl.addWidget(QLabel("Emissive decay?"), 0, 4)
-        pl.addWidget(QLabel("Pigment"), 0, 5)
-        for i in range(n_s):
+        for i in range(self.n_s):
             row = i + 1
-            state_name = self.field(f"state_name{i + 1:d}")
-            pl.addWidget(QLabel(state_name), row, 0)
+            state_name = self.parent.data["state_names"][i]
             self.hop.append(QLineEdit("0.0"))
-            pl.addWidget(self.hop[i], row, 1)
             self.decay.append(QLineEdit("0.0"))
-            pl.addWidget(self.decay[i], row, 2)
             self.xsec.append(QLineEdit("0.0"))
-            pl.addWidget(self.xsec[i], row, 3)
             self.emissive.append(QCheckBox())
-            pl.addWidget(self.emissive[i], row, 4)
             self.which_p.append(QComboBox())
+            self.pl.addWidget(QLabel(state_name), row, 0)
+            self.pl.addWidget(self.hop[i], row, 1)
+            self.pl.addWidget(self.decay[i], row, 2)
+            self.pl.addWidget(self.xsec[i], row, 3)
+            self.pl.addWidget(self.emissive[i], row, 4)
+            # need to find out how to centre the checkboxes. it's annoying
+            # self.pl.setAlignment(self.emissive[i], Qt.AlignHCenter)
             for j in range(self.field("n_p")):
-                name = self.field(f"pigment_name{j + 1:d}")
+                name = self.parent.data["pigment_names"][j]
                 self.which_p[i].addItem(name)
-            pl.addWidget(self.which_p[i], row, 5)
-        layout.addLayout(pl)
-        self.setLayout(layout)
+            self.pl.addWidget(self.which_p[i], row, 5)
+
+    def cleanupPage(self):
+        while self.pl.count():
+            child = self.pl.takeAt(0)
+            if child.widget:
+                child.widget().deleteLater()
+        self.hop      = []
+        self.decay    = []
+        self.xsec     = []
+        self.emissive = []
+        self.which_p  = []
+        self.n_s = 0
 
     def updateData(self):
         self.parent.data["hop"] = [float(p.text())
@@ -317,6 +452,7 @@ class ProteinBuilder(QWizard):
     def __init__(self):
         super().__init__()
         self.data = {}
+        self.addPage(loadExisting(self))
         self.addPage(nameNumber(self))
         self.addPage(namePigmentsStates(self))
         self.addPage(pigmentProperties(self))
