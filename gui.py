@@ -177,20 +177,15 @@ class nameNumber(QWizardPage):
         '''
         validated = True
         msgs = []
-
         if len(self.parent.data["name"]) == 0:
             msgs.append("Length of protein name must be > 0.")
             validated = False
-            # NB: checking string legality??
-
         if self.parent.data["n_p"] <= 0:
             msgs.append("Number of pigments must be > 0.")
             validated = False
-
         if self.parent.data["n_s"] <= 0:
             msgs.append("Number of states must be > 0.")
             validated = False
-
         return validated, msgs
 
     def validatePage(self):
@@ -201,7 +196,8 @@ class nameNumber(QWizardPage):
         self.updateData()
         validated, msgs = self.checkData()
         if not validated:
-            print(msgs)
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
         print(f"NN exit: data = {self.parent.data}")
         return validated
 
@@ -212,8 +208,10 @@ class namePigmentsStates(QWizardPage):
         self.layout = QVBoxLayout()
         self.pl = QGridLayout()
         self.sl = QGridLayout()
+        self.nl = QGridLayout()
         self.layout.addLayout(self.pl)
         self.layout.addLayout(self.sl)
+        self.layout.addLayout(self.nl)
         self.setLayout(self.layout)
 
     def initializePage(self):
@@ -221,18 +219,26 @@ class namePigmentsStates(QWizardPage):
         self.n_s = self.field('n_s')
         self.pigment_names = []
         self.state_names = []
+        self.n_tot = []
+        self.n_thermal = []
         for i in range(self.n_p):
             self.pl.addWidget(QLabel(f"Name of pigment {i + 1:d}:"), i, 0)
             current_name = QLineEdit()
             self.pigment_names.append(current_name)
-            #self.registerField(f"pigment_name{i + 1:d}", current_name)
             self.pl.addWidget(current_name, i, 1)
         for i in range(self.n_s):
             self.sl.addWidget(QLabel(f"Name of state {i + 1:d}:"), i, 0)
             current_state = QLineEdit()
             self.state_names.append(current_state)
-            #self.registerField(f"state_name{i + 1:d}", current_state)
             self.sl.addWidget(current_state, i, 1)
+        self.nl.addWidget(QLabel("Total number of pigments"), 0, 1)
+        self.nl.addWidget(QLabel("Thermally accessible pigments"), 0, 2)
+        for i in range(self.n_p):
+            self.nl.addWidget(QLabel(f"Pigment {i + 1:d}:"), i + 1, 0)
+            self.n_tot.append(QSpinBox())
+            self.n_thermal.append(QSpinBox())
+            self.nl.addWidget(self.n_tot[i], i + 1, 1)
+            self.nl.addWidget(self.n_thermal[i], i + 1, 2)
         '''
         check if there's data loaded and fill values if so
         '''
@@ -245,17 +251,28 @@ class namePigmentsStates(QWizardPage):
                 names = ["" for _ in range(self.n_p)]
             for i, n in enumerate(names):
                 b[i].setText(n)
-    
+        keys = ["n_tot", "n_thermal"]
+        boxlists = [self.n_tot, self.n_thermal]
+        for k, b in zip(keys, boxlists):
+            if k in self.parent.data:
+                vals = self.parent.data[k]
+            else:
+                vals = [0 for _ in range(self.n_p)]
+            for i, n in enumerate(vals):
+                b[i].setValue(n)
+
     def cleanupPage(self):
-        self.pigment_names = []
-        self.state_names = []
         self.n_p = 0
         self.n_s = 0
+        self.pigment_names = []
+        self.state_names = []
+        self.n_tot = []
+        self.n_thermal = []
         for item in self.pigment_names:
             item.setText("")
         for item in self.state_names:
             item.setText("")
-        for layout in self.pl, self.sl:
+        for layout in self.pl, self.sl, self.nl:
             while layout.count():
                 child = layout.takeAt(0)
                 if child.widget:
@@ -264,13 +281,15 @@ class namePigmentsStates(QWizardPage):
             for field in self.fields:
                 del self.parent.data[field]
 
-
     def updateData(self):
         self.parent.data["pigment_names"] = [p.text()
                                         for p in self.pigment_names]
         self.parent.data["state_names"]   = [s.text()
                                         for s in self.state_names]
-        self.fields = ["pigment_names", "state_names"]
+        self.parent.data["n_tot"] = [int(p.value()) for p in self.n_tot]
+        self.parent.data["n_thermal"] = [int(p.value())
+                                         for p in self.n_thermal]
+        self.fields = ["pigment_names", "state_names", "n_tot", "n_thermal"]
 
     def checkData(self):
         '''
@@ -283,16 +302,22 @@ class namePigmentsStates(QWizardPage):
         for name_string, n_string in zip(
             ['pigment_names', 'state_names'], ['n_p', 'n_s']):
             nsmsg = name_string.replace("_", " ")
-
             if any([len(p) == 0 for p in data[name_string]]):
                 msgs.append(f"Length of {nsmsg} must be > 0.")
                 validated = False
-                # NB: checking string legality??
-
             if len(data[name_string]) != data[n_string]:
                 msgs.append(f"Number of {nsmsg} doesn't match {n_string}.")
                 validated = False
-
+        for i in range(data['n_p']):
+            if self.n_tot[i].value() <= 0:
+                msgs.append(f"Number of pigments for pigment {i} must be > 0.")
+                validated = False
+            if self.n_thermal[i].value() <= 0:
+                msgs.append(f"Number of thermally accessible pigments for pigment {i} must be > 0.")
+                validated = False
+            if self.n_tot[i].value() < self.n_thermal[i].value():
+                msgs.append(f"Number of thermally accessible states for pigment {i} is larger than total.")
+                validated = False
         return validated, msgs
 
     def validatePage(self):
@@ -303,7 +328,8 @@ class namePigmentsStates(QWizardPage):
         self.updateData()
         validated, msgs = self.checkData()
         if not validated:
-            print(msgs)
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
         print(f"NPS exit: data = {self.parent.data}")
         return validated
 
@@ -317,19 +343,29 @@ class pigmentProperties(QWizardPage):
         self.setLayout(self.layout)
         self.n_s = 0
         # column headers
-        self.pl.addWidget(QLabel("Hopping time (s)"), 0, 1)
+        self.hopLabel = QLabel("Hopping time (s)")
+        self.hopLabel.setToolTip("The hopping time for each state from one protein to its neighbours, in seconds. e.g. for 1ps, enter 1e-12.")
+        self.pl.addWidget(self.hopLabel, 0, 1)
         self.pl.addWidget(QLabel("Decay time (s)"), 0, 2)
         self.pl.addWidget(QLabel("Cross-section (cm^{-1})"), 0, 3)
-        self.pl.addWidget(QLabel("Emissive decay?"), 0, 4)
-        self.pl.addWidget(QLabel("Pigment"), 0, 5)
+        self.emissiveLabel = QLabel("Emissive decay?")
+        self.emissiveLabel.setToolTip("At least one decay must be emissive; that is, visible to the detector. Multiple boxes can be checked here if there are multiple decay pathways.")
+        self.pl.addWidget(self.emissiveLabel, 0, 4)
+        self.pigmentLabel = QLabel("Pigment") 
+        self.pigmentLabel.setToolTip("Which pigment does each state belong to?")
+        self.pl.addWidget(self.pigmentLabel, 0, 5)
+        self.abundanceLabel = QLabel("Abundance") 
+        self.pigmentLabel.setToolTip("What fraction of sites have this state present?")
+        self.pl.addWidget(self.abundanceLabel, 0, 6)
 
     def initializePage(self):
         self.n_s = self.field("n_s")
-        self.hop      = []
-        self.decay    = []
-        self.xsec     = []
-        self.emissive = []
-        self.which_p  = []
+        self.hop       = []
+        self.decay     = []
+        self.xsec      = []
+        self.emissive  = []
+        self.which_p   = []
+        self.abundance = []
         for i in range(self.n_s):
             row = i + 1
             state_name = self.parent.data["state_names"][i]
@@ -338,6 +374,7 @@ class pigmentProperties(QWizardPage):
             self.xsec.append(QLineEdit("0.0"))
             self.emissive.append(QCheckBox())
             self.which_p.append(QComboBox())
+            self.abundance.append(QLineEdit("0.0"))
             self.pl.addWidget(QLabel(state_name), row, 0)
             self.pl.addWidget(self.hop[i], row, 1)
             self.pl.addWidget(self.decay[i], row, 2)
@@ -350,16 +387,20 @@ class pigmentProperties(QWizardPage):
                 name = self.parent.data["pigment_names"][j]
                 self.which_p[i].addItem(name)
             self.pl.addWidget(self.which_p[i], row, 5)
+            self.pl.addWidget(self.abundance[i], row, 6)
         '''
         check if there's data loaded and fill values if so
         '''
-        keys = ["hop", "xsec"]
-        boxlists = [self.hop, self.xsec]
+        keys = ["hop", "xsec", "abundance"]
+        boxlists = [self.hop, self.xsec, self.abundance]
         for k, b in zip(keys, boxlists):
             if k in self.parent.data:
                 names = self.parent.data[k]
             else:
-                names = [0.0 for _ in range(self.n_s)]
+                if k == 'abundance':
+                    names = [1.0 for _ in range(self.n_s)]
+                else:
+                    names = [0.0 for _ in range(self.n_s)]
             for i, n in enumerate(names):
                 b[i].setText(str(n))
         if "intra" in self.parent.data:
@@ -385,11 +426,12 @@ class pigmentProperties(QWizardPage):
             child = self.pl.takeAt(0)
             if child.widget:
                 child.widget().deleteLater()
-        self.hop      = []
-        self.decay    = []
-        self.xsec     = []
-        self.emissive = []
-        self.which_p  = []
+        self.hop       = []
+        self.decay     = []
+        self.xsec      = []
+        self.emissive  = []
+        self.which_p   = []
+        self.abundance = []
         self.n_s = 0
         self.n_p = 0
         if getattr(self, "fields", False):
@@ -406,7 +448,18 @@ class pigmentProperties(QWizardPage):
         self.parent.data["emissive"] = [p.isChecked() for p in self.emissive]
         self.parent.data["which_pigment"] = [p.currentIndex() + 1
                                       for p in self.which_p]
-        self.fields = ["hop", "decay", "xsec", "emissive", "which_pigment"]
+        dist = []
+        which = self.parent.data["which_pigment"]
+        for i in range(self.parent.data['n_s']):
+            row = []
+            for j in range(self.parent.data['n_s']):
+               row.append(False if which[i] == which[j] else True) 
+            dist.append(row)
+        self.parent.data["dist"] = dist
+        self.parent.data["abundance"]  = [float(p.text())
+                        if p.text() != '' else 0.0 for p in self.abundance]
+        self.fields = ["hop", "decay", "xsec", "emissive",
+                       "which_pigment", "abundance"]
 
     def checkData(self):
         '''
@@ -416,12 +469,14 @@ class pigmentProperties(QWizardPage):
         msgs = []
         data = self.parent.data
         if not(any(data["emissive"])):
-            validated = False
             msgs.append("At least one decay should be emissive!")
-        print(f"xsec = {data['xsec']}, comp = {data['xsec'] == 0.0}")
-        if all([d == 0.0 for d in data['xsec']]):
             validated = False
+        if all([d == 0.0 for d in data['xsec']]):
             msgs.append("At least one state should have a non-zero cross section.")
+            validated = False
+        if all([d == 0.0 for d in data['abundance']]):
+            msgs.append("At least one state should have a non-zero abundance.")
+            validated = False
         return validated, msgs
         
     def validatePage(self):
@@ -432,7 +487,8 @@ class pigmentProperties(QWizardPage):
         self.updateData()
         validated, msgs = self.checkData()
         if not validated:
-            print(msgs)
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
         print(f"PP exit: data = {self.parent.data}")
         return validated
 
@@ -498,9 +554,9 @@ class matrixTables(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
+        self.layout = QVBoxLayout()
 
     def initializePage(self):
-        self.layout = QVBoxLayout()
         self.intra = MatrixTable(self.parent.data, "intra", block_diagonal=True)
         self.ann   = MatrixTable(self.parent.data, "ann", symmetric=True)
         self.ann_rem_layout = RemainderTable(self.parent.data)
@@ -517,11 +573,6 @@ class matrixTables(QWizardPage):
 
     def cleanupPage(self):
         self.ann_rem_layout.cleanup()
-        while self.layout.count():
-            child = self.layout.takeAt(0)
-            print(child)
-            if child.widget:
-                child.widget().deleteLater()
         self.intra  = []
         self.ann    = []
         self.intra_label = None
@@ -593,7 +644,8 @@ class matrixTables(QWizardPage):
         self.updateData()
         validated, msgs = self.checkData()
         if not validated:
-            print(msgs)
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
         print(f"PP exit: data = {self.parent.data}")
         return validated
 
@@ -617,64 +669,59 @@ class savePage(QWizardPage):
         self.browseButton = QPushButton("Browse") 
         self.browseButton.setToolTip("Search for a JSON file")
         self.browseButton.clicked.connect(self.onBrowseButton)
-        self.oaLabel = QLabel("Overwrite existing data or append to it?")
-        self.overwriteButton = QRadioButton()
-        self.appendButton = QRadioButton()
         self.saveButton = QPushButton("Save") 
         self.saveButton.setToolTip("Click to save JSON data to this file")
         self.saveButton.clicked.connect(self.onSaveButton)
-        self.proteinChooser = QComboBox()
         gl.addWidget(QLabel("Filename:"), 0, 0)
-        gl.addWidget(self.filename, 0, 1)
+        gl.addWidget(self.filename, 0, 1,)
         gl.addWidget(self.browseButton, 0, 2)
-        gl.addWidget(self.oaLabel, 1, 0)
-        gl.addWidget(self.overwriteButton, 2, 0)
-        gl.addWidget(self.appendButton, 2, 1)
-        gl.addWidget(self.saveButton, 2, 2)
+        gl.addWidget(self.saveButton, 0, 3)
         layout.addLayout(gl)
         self.setLayout(layout)
 
     def save_to_file(self):
         dd = self.parent.data
-        del dd['filename']
-        del dd['decay']
         name = dd.pop('name')
         final_data = {name: dd}
+        print(final_data)
+        dd['name'] = name
+        # don't need these in the JSON
+        del final_data[name]['filename']
+        del final_data[name]['decay']
         success = True
-
-        if self.overwriteButton.isChecked():
-            with open(self.filename.text(), "w") as f:
-                try:
-                    json.dump(final_data, f)
-                except:
-                    print("Failed to save data to JSON.")
-                    success = False
-        elif self.appendButton.isChecked():
-            with open(self.filename.text(), "r") as f:
+        self.existing_data = {}
+        # if the filename exists, try to open it and parse the JSON
+        if os.path.isfile(self.filename.text()):
+            with open(self.filename.text(), "r+", encoding='utf-8') as f:
                 try:
                     self.existing_data = json.load(f)
                     print(self.existing_data)
                     self.load_success = True
                 except:
-                    self.existing_data = {}
                     print("Failed to load existing protein data from JSON.")
                     self.load_success = False
-            if self.parent.data["name"] in self.existing_data.keys():
-                # need a qmessagebox for this
-                print("Protein name already exists in data file. Overwrite?")
-                overwrite = True
-                if overwrite:
-                    self.total_data = self.existing_data | final_data
-                else:
-                    success = False
+        # if the protein name matches one that's already there and we just
+        # merge the dicts, the original will be overwritten, so check
+        if self.parent.data["name"] in self.existing_data.keys():
+            overwrite = True
+            self.overwriteCheck = QMessageBox.question(self,
+                "", "Protein name already exists in data file. Overwrite?")
+
+            if self.overwriteCheck == QMessageBox.StandardButton.NoButton:
+                overwrite = False
+
+            if overwrite:
+                self.total_data = self.existing_data | final_data
             else:
-                final_data = self.existing_data | final_data
-                with open(self.filename.text(), "w") as f:
-                    json.dump(final_data, f)
+                success = False
+        else:
+            final_data = self.existing_data | final_data
+            with open(self.filename.text(), "w") as f:
+                json.dump(final_data, f)
         return success
 
     def onBrowseButton(self):
-        self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
+        self.fn, _ = QFileDialog.getSaveFileName(self, "Select JSON file",
                                               os.getcwd(),
                                               "JSON file (*.json)")
         self.filename.setText(self.fn)
