@@ -1,7 +1,8 @@
 # callum - 30/07/2026
 # -*- coding: utf-8 -*-
-# JsonModel taken from
-# doc.qt.io/qtforpython-6/examples/example_widgets_itemviews_jsonmodel.html
+# shout out to
+# pythonguis.com/faq/constantly-print-subprocess-output-while-process-is-running/
+# for the implementation of runPage.run() at the bottom here
 
 import sys
 import os
@@ -15,7 +16,7 @@ from typing import Any
 
 '''
 
-STOPSetup here is a wizard that takes the user through
+STOPSetup is a wizard that takes the user through
 the various quantities they need to define in order for the
 TCSPC simulation to run. The problem is that
 a.) many of the quantities depend on the values of previous quantities,
@@ -23,9 +24,31 @@ which would naturally suggest a QWizard, but
 b.) the data is too annoying and heterogenous to really fit naturally
 in the field mechanism of QWizards. several quantities are matrices
 whose size is given at runtime by the user, and so on. so:
-i'm instead overriding the validatePage() method to add various
-quantities to the parent QWizard when the user presses next on each screen
+i've added a data member to the parent QWizard class and each page adds
+relevant quantities to that as the user goes; I've added updateData()
+and checkData() methods to each page to validate that data as necessary,
+checkData() returns a bool along with any error messages,
+and validatePage() is overridden to check that bool and print the error
+messages in a QMessageBox if there are any.
 
+TODO:
+    - implement parsers in parse.py. my idea is that i'll write a parser
+      for protein data and one for simulation data which each take a dict
+      and an optional set of keys. the data's then checked to make sure
+      there are no keys in there that shouldn't be and that the value
+      for each key is legitimate, and returns a bool along with error
+      messages as checkData() does currently. that way i can centralise
+      all the parser code and reuse it on the run page and in main.py.
+    - maybe (MAYBE) get the fortran to print out intermediate histograms
+      as it goes, and then plot them in a separate window, possibly along
+      with the population per rep (checked at intervals; could do this
+      by checking when runPage.output_area is updated, since the fortran
+      prints to stdout every 100 reps).
+    - test suite. write a bunch of toy protein and simulation JSON files
+      which either should or shouldn't parse, put them in a tests dir,
+      glob them and run them through the parsers one by one. GUI testing
+      for things like going back and forth through the wizard is harder
+      to standardise, I've been trying to test as i go
 '''
 
 def parse_protein_data(data, fields=None):
@@ -78,20 +101,19 @@ Will be used to generate output directory structure.''')
         self.setLayout(layout)
 
     def load_from_file(self):
-        print(self.filename.text())
         if os.path.isfile(self.filename.text()):
             with open(self.filename.text()) as f:
                 try:
                     self.data = json.load(f)
-                    print(self.data)
                     success = True
                 except:
                     self.data = {}
-                    print("JSON load failed.")
-                    # TODO: make a QMessageBox for this
+                    box = QMessageBox.critical(self,
+                    "whoopsy daisy", "Failed to load protein data from JSON.")
                     success = False
         else:
-            print("File does not exist.")
+            box = QMessageBox.critical(self,
+            "whoopsy daisy", "Protein JSON file does not exist.")
             success = False
         return success
 
@@ -107,7 +129,6 @@ Will be used to generate output directory structure.''')
             protein_names = self.data.keys()
             for name in protein_names:
                 self.proteinChooser.addItem(name)
-            # make a QMessageBox here explaining if it fails
 
     def onResetButton(self):
         self.load_success = False
@@ -359,12 +380,16 @@ class pigmentProperties(QWizardPage):
         self.n_s = 0
         # column headers
         self.hopLabel = QLabel("Hopping time (s)")
-        self.hopLabel.setToolTip("The hopping time for each state from one protein to its neighbours, in seconds. e.g. for 1ps, enter 1e-12.")
+        self.hopLabel.setToolTip(
+'''The hopping time for each state from one protein to its neighbours,
+in seconds. e.g. for 1ps, enter 1e-12.''')
         self.pl.addWidget(self.hopLabel, 0, 1)
         self.pl.addWidget(QLabel("Decay time (s)"), 0, 2)
         self.pl.addWidget(QLabel("Cross-section (cm^{-1})"), 0, 3)
         self.emissiveLabel = QLabel("Emissive decay?")
-        self.emissiveLabel.setToolTip("At least one decay must be emissive; that is, visible to the detector. Multiple boxes can be checked here if there are multiple decay pathways.")
+        self.emissiveLabel.setToolTip(
+'''At least one decay must be emissive; that is, visible to the detector.
+Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.pl.addWidget(self.emissiveLabel, 0, 4)
         self.pigmentLabel = QLabel("Pigment") 
         self.pigmentLabel.setToolTip("Which pigment does each state belong to?")
@@ -698,10 +723,8 @@ class saveProteinPage(QWizardPage):
         dd = self.parent.data
         name = dd.pop('name')
         final_data = {name: dd}
-        print(final_data)
         dd['name'] = name
         # don't need these in the JSON
-        print(final_data)
         if 'filename' in final_data:
             # filename is only a key if a file was loaded at the start
             del final_data[name]['filename']
@@ -713,10 +736,11 @@ class saveProteinPage(QWizardPage):
             with open(self.filename.text(), "r+", encoding='utf-8') as f:
                 try:
                     self.existing_data = json.load(f)
-                    print(self.existing_data)
                     self.load_success = True
                 except:
-                    print("Failed to load existing protein data from JSON.")
+                    box = QMessageBox.critical(self,
+                    "whoopsy daisy", 
+                    "Failed to load existing protein data from JSON to merge.")
                     self.load_success = False
         # if the protein name matches one that's already there and we just
         # merge the dicts, the original will be overwritten, so check
@@ -737,7 +761,9 @@ class saveProteinPage(QWizardPage):
             with open(self.filename.text(), "w") as f:
                 json.dump(final_data, f)
         if success:
+            # these will be needed on runPage later on
             self.parent.protein_file = self.filename.text()
+            self.parent.protein = name
         return success
 
     def onBrowseButton(self):
@@ -757,6 +783,7 @@ class loadSimulation(QWizardPage):
         QWizardPage.__init__(self, parent)
         self.parent = parent
         self.setTitle("Load existing simulation parameters.")
+        self.sim_data = {}
 
     def initializePage(self):
         layout = QVBoxLayout()
@@ -781,17 +808,20 @@ class loadSimulation(QWizardPage):
         self.setLayout(layout)
 
     def load_from_file(self):
-        print(self.filename.text())
-        with open(self.filename.text()) as f:
-            try:
-                self.sim_data = json.load(f)
-                print(self.sim_data)
-                success = True
-            except:
-                self.sim_data = {}
-                print("JSON load failed.")
-                # TODO: make a QMessageBox for this
-                success = False
+        if os.path.isfile(self.filename.text()):
+            with open(self.filename.text()) as f:
+                try:
+                    self.sim_data = json.load(f)
+                    success = True
+                except:
+                    self.sim_data = {}
+                    box = QMessageBox.critical(self,
+                    "whoospy daisy", "JSON load failed.")
+                    success = False
+        else:
+            box = QMessageBox.critical(self,
+            "whoospy daisy", "File does not exist.")
+            success = False
         return success
 
     def onBrowseButton(self):
@@ -806,8 +836,7 @@ class loadSimulation(QWizardPage):
     def onResetButton(self):
         self.load_success = False
         self.filename.setText("")
-        self.simName.clear()
-        self.data = {}
+        self.sim_data = {}
         self.parent.sim_data = {}
 
     def updateData(self):
@@ -815,7 +844,7 @@ class loadSimulation(QWizardPage):
             self.parent.sim_data = self.sim_data
             self.parent.sim_data['filename'] = self.filename.text()
         else:
-            self.parent.data = {}
+            self.parent.sim_data = {}
 
     def validatePage(self):
         self.updateData()
@@ -845,42 +874,50 @@ class simulationParameters(QWizardPage):
 
         self.fwhmLabel.setToolTip("The FWHM of the pulse, in seconds.")
         self.fluenceLabel.setToolTip("The fluence in photons per pulse.")
-        self.nSitesLabel.setToolTip('''Number of sites in the lattice.
-Generally unless you are working with aggregates of a known, specific size,
-it's best to leave this on the order of 100 (especially if hopping is allowed,
-and if some states are not present on every site, for statistical reasons.)''')
-        self.latticeLabel.setToolTip('''Sets the connectivity of the lattice.
-Unless you have good reason to think your aggregate is a line, you can
-probably ignore this; changing from honeycomb to square to hex generally
-does not make a qualitative difference to the results.''')
+        self.nSitesLabel.setToolTip(
+'''Number of sites in the lattice. Generally unless you are working with
+aggregates of a known, specific size, it's best to leave this on the order
+of 100 (especially if hopping is allowed, and if some states are not 
+present on every site, for statistical reasons.)''')
+        self.latticeLabel.setToolTip(
+'''Sets the connectivity of the lattice. Unless you have good reason to
+think your aggregate is a line, you can probably ignore this; changing 
+from honeycomb to square to hex generally does not make a qualitative
+difference to the results.''')
         self.repRateLabel.setToolTip("Laser repetition rate in Hz.")
-        self.burnRepsLabel.setToolTip('''"Burn reps" are laser reps performed
-at the start of the simulation *without binning decays*, in order to allow
-steady state populations to develop and simulate the experimental situation,
-where the system's probably already in the steady state before measurement
-begins. The actual number you need is dependent on the system to an extent;
-see the output files labelled "_population.csv" for the total population
-of each state at the end of each rep to get a better idea.''')
+        self.burnRepsLabel.setToolTip(
+'''"Burn reps" are laser reps performed at the start of the simulation
+*without binning decays*, in order to allow steady state populations to 
+develop and simulate the experimental situation, where the system's probably
+already in the steady state before measurement begins. The actual number 
+you need is dependent on the system to an extent; see the output files
+labelled "_population.csv" for the total population of each state at the
+end of each rep to get a better idea.''')
         self.tMaxLabel.setToolTip("Time over which decays will be binned.")
-        self.dt1Label.setToolTip('''Time step to use during the measurement
-time, i.e. from t = 0 to whatever value you give t_max directly above.''')
-        self.dt2Label.setToolTip('''Time step to use in between measurement
-phases, i.e. from t = t_max up to t = 1 / rep_rate, when the next pulse begins.
-This time step should generally be longer since we're not binning so knowledge
+        self.dt1Label.setToolTip(
+'''Time step to use during the measurement time, i.e. from t = 0 
+to whatever value you give t_max directly above.''')
+        self.dt2Label.setToolTip(
+'''Time step to use in between measurement phases, i.e. from t = t_max 
+up to t = 1 / rep_rate, when the next pulse begins. This time step 
+should generally be longer since we're not binning so knowledge
 of the precise timing of events is unimportant, and also the shorter this
 time step is the longer the simulation will take.''')
         self.binwidthLabel.setToolTip("Binwidth in seconds.")
-        self.nCountsLabel.setToolTip('''Number of counts to simulate to. Note
-that this is not a strict limit; the code will periodically check what the
-total number of emissive decays (those visible to the detector) is per bin,
-and will stop once any bin reaches n_counts or greater.''')
-        self.nRepeatsLabel.setToolTip('''Number of repeats to do. The way this
-works is that each repeat is set up with a new RNG seed; additionally, if
-there are some abundances < 1.0, the code will randomise the locations of
+        self.nCountsLabel.setToolTip(
+'''Number of counts to simulate to. Note that this is not a strict limit;
+the code will periodically check what the total number of emissive decays
+(those visible to the detector) is per bin, and will stop once any
+bin reaches n_counts or greater.''')
+        self.nRepeatsLabel.setToolTip(
+'''Number of repeats to do. The way this works is that each repeat is 
+set up with a new RNG seed; additionally, if there are some 
+abundances < 1.0, the code will randomise the locations of
 proteins with and without the given states for each repeat.''')
-        self.debugLabel.setToolTip('''Set debug mode on or off. Generally
-you can probably leave it off; it's mostly for my benefit, or for if you want
-to modify the guts of the fortran code in some way.''')
+        self.debugLabel.setToolTip(
+'''Set debug mode on or off. Generally you can probably leave it off;
+it's mostly for my benefit, or for if you want to modify the guts of 
+the fortran code in some way.''')
 
         gl.addWidget(self.fwhmLabel,     0, 0)
         gl.addWidget(self.fluenceLabel,  1, 0)
@@ -957,7 +994,7 @@ to modify the guts of the fortran code in some way.''')
     def cleanupPage(self):
         for sk, b in zip(self.sim_keys, self.boxes):
             if sk == 'debug':
-                b.setCheckState(False)
+                b.setChecked(False)
             if sk == 'lattice':
                 b.setCurrentIndex(0)
             else:
@@ -966,12 +1003,15 @@ to modify the guts of the fortran code in some way.''')
     def updateData(self):
         for sk, b in zip(self.sim_keys, self.boxes):
             if sk == 'debug':
+                print(f"sim params update data: debug: {sk}")
                 v = b.isChecked()
-            if sk == 'lattice':
-                v = b.currentIndex()
+            elif sk == 'lattice':
+                print(f"sim params update data: lattice: {sk}")
+                v = b.currentText()
             elif sk in ['n_sites', 'burn_reps', 'n_counts', 'n_repeats']:
                 v = int(b.text() if b.text() != '' else 0)
             else:
+                print(f"sim params update data: else: {sk}")
                 v = float(b.text() if b.text() != '' else 0.0)
             self.parent.sim_data[sk] = v
 
@@ -1056,7 +1096,8 @@ class saveSimPage(QWizardPage):
                     with open(self.filename.text(), "w") as f:
                         json.dump(dd, f)
                 except:
-                    print("Failed to save JSON.")
+                    box = QMessageBox.critical(self,
+                    "whoospy daisy", "Failed to save JSON")
                     success = False
             else:
                 success = False
@@ -1065,7 +1106,8 @@ class saveSimPage(QWizardPage):
                 with open(self.filename.text(), "w") as f:
                     json.dump(dd, f)
             except:
-                print("Failed to save JSON.")
+                box = QMessageBox.critical(self,
+                "whoospy daisy", "Failed to save JSON")
                 success = False
         if success:
             self.parent.sim_file = self.filename.text()
@@ -1083,6 +1125,121 @@ class saveSimPage(QWizardPage):
     def validatePage(self):
         return self.save_success
 
+class runPage(QWizardPage):
+    def __init__(self, parent):
+        QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.setTitle("Run")
+        self.setSubTitle("Final setup and running simulations.")
+        self.process = None
+        self.layout = QVBoxLayout()
+        self.gl = QGridLayout()
+        self.detergentLabel = QLabel("Detergent:")
+        self.detergentLabel.setToolTip(
+'''Set detergent condition on or off. If this box is checked, the code will
+zero out hopping rates for all states, effectively simulating a set of
+completely isolated proteins with no energy transfer between them.''')
+        self.coresLabel = QLabel("Number of cores to use:")
+        self.coresLabel.setToolTip(
+'''The fortran code can use OpenMPI to reduce simulation time by running on
+multiple cores simultaneously. If you're on a multi-core machine then setting
+n > 1 will probably improve performance, but don't set it to more than the
+number of cores you actually have, that'll probably just make it slower.''')
+        self.proteinFileBox = QLineEdit()
+        self.proteinChoice = QLabel()
+        self.simulationFileBox = QLineEdit()
+        self.detergentOption = QCheckBox()
+        self.coresBox = QSpinBox()
+        self.coresBox.setValue(1)
+        cs = f"Recommended max cores (os.cpu_count()): {os.cpu_count()}"
+        self.coresGuideLabel = QLabel(cs)
+
+        self.gl.addWidget(QLabel("Protein file:"), 0, 0)
+        self.gl.addWidget(QLabel("Protein name:"), 1, 0)
+        self.gl.addWidget(QLabel("Simulation file:"), 2, 0)
+        self.gl.addWidget(self.detergentLabel, 3, 0)
+        self.gl.addWidget(self.coresLabel, 4, 0)
+        self.gl.addWidget(self.proteinFileBox, 0, 1)
+        self.gl.addWidget(self.proteinChoice, 1, 1)
+        self.gl.addWidget(self.simulationFileBox, 2, 1)
+        self.gl.addWidget(self.detergentOption, 3, 1)
+        self.gl.addWidget(self.coresBox, 4, 1)
+        self.gl.addWidget(self.coresGuideLabel, 4, 2)
+        self.runButton = QPushButton("Run simulation")
+        self.runButton.clicked.connect(self.run)
+        self.gl.addWidget(self.runButton, 5, 0, 1, -1)
+        self.output_area = QPlainTextEdit()
+        self.output_area.setReadOnly(True)
+
+        self.layout.addLayout(self.gl)
+        self.layout.addWidget(self.output_area)
+        self.killButton = QPushButton("Stop simulation")
+        self.killButton.clicked.connect(self.kill)
+        self.layout.addWidget(self.killButton)
+        self.setLayout(self.layout)
+
+    def initializePage(self):
+        self.proteinFileBox.setText(self.parent.protein_file)
+        self.proteinChoice.setText(self.parent.protein)
+        self.simulationFileBox.setText(self.parent.sim_file)
+
+    def run(self):
+        '''
+        run the TCSPC simulation with the options below.
+        '''
+        if self.process is not None:
+            return
+        self.process = QtCore.QProcess(self)
+        self.output_area.clear()
+        self.runButton.setEnabled(False)
+        self.process.readyReadStandardOutput.connect(self.read_stdout)
+        self.process.readyReadStandardError.connect(self.read_stderr)
+        self.process.finished.connect(self.run_finished)
+
+        pf = f"{self.parent.protein_file}"
+        p = f"{self.parent.protein}"
+        d = f"{self.detergentOption.isChecked()}"
+        n = f"{self.coresBox.value()}"
+        self.process.start(
+                "python",
+                ["main.py", "-pf", pf, "-p", p, "-d", d, "-n", n],
+                )
+
+    def read_stdout(self):
+        data = self.process.readAllStandardOutput()
+        text = bytes(data).decode("utf-8")
+        self.output_area.appendPlainText(text.rstrip())
+
+    def read_stderr(self):
+        data = self.process.readAllStandardError()
+        text = bytes(data).decode("utf-8")
+        self.output_area.appendPlainText(text.rstrip())
+
+    def run_finished(self):
+        output = self.output_area.toPlainText()
+        # NB: put a directory gen function into parse.py
+        # and use that to get the path here
+        outfile = os.path.join("out", "stdout.log")
+        try:
+            with open(outfile, "w") as f:
+                f.write(output)
+        except:
+            box = QMessageBox(self, "whoopsy daisy",
+                "Unable to save log file.")
+        self.process = None
+        self.runButton.setEnabled(True)
+
+    def kill(self):
+        '''
+        stop the TCSPC simulation
+        '''
+        if self.process is None:
+            return
+        self.process.kill()
+        self.process = None
+
+    def validatePage(self):
+        return True if self.process is None else False
 
 class STOPSetup(QWizard):
     def __init__(self):
@@ -1102,6 +1259,7 @@ class STOPSetup(QWizard):
         self.addPage(loadSimulation(self))
         self.addPage(simulationParameters(self))
         self.addPage(saveSimPage(self))
+        self.addPage(runPage(self))
         self.setWindowTitle("Setup wizard for STOP")
 
 if __name__ == "__main__":
