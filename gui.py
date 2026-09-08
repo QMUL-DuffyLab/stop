@@ -686,7 +686,10 @@ class savePage(QWizardPage):
         print(final_data)
         dd['name'] = name
         # don't need these in the JSON
-        del final_data[name]['filename']
+        print(final_data)
+        if 'filename' in final_data:
+            # filename is only a key if a file was loaded at the start
+            del final_data[name]['filename']
         del final_data[name]['decay']
         success = True
         self.existing_data = {}
