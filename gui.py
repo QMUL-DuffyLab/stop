@@ -15,7 +15,7 @@ from typing import Any
 
 '''
 
-ProteinBuilder here is a wizard that takes the user through
+STOPSetup here is a wizard that takes the user through
 the various quantities they need to define in order for the
 TCSPC simulation to run. The problem is that
 a.) many of the quantities depend on the values of previous quantities,
@@ -27,6 +27,17 @@ i'm instead overriding the validatePage() method to add various
 quantities to the parent QWizard when the user presses next on each screen
 
 '''
+
+def parse_protein_data(data, fields=None):
+    '''
+    check an dictionary `data` and make sure that:
+    - it does not contain any keys that shouldn't be there
+    - all the keys that are there have corresponding values that
+      are valid wrt the rest of the code.
+    if a list of keys is given, check only those keys (this allows us
+    to use the same function for each wizard page); otherwise check it all.
+    '''
+    return True
 
 class loadExisting(QWizardPage):
     def __init__(self, parent):
@@ -68,16 +79,20 @@ Will be used to generate output directory structure.''')
 
     def load_from_file(self):
         print(self.filename.text())
-        with open(self.filename.text()) as f:
-            try:
-                self.data = json.load(f)
-                print(self.data)
-                success = True
-            except:
-                self.data = {}
-                print("JSON load failed.")
-                # TODO: make a QMessageBox for this
-                success = False
+        if os.path.isfile(self.filename.text()):
+            with open(self.filename.text()) as f:
+                try:
+                    self.data = json.load(f)
+                    print(self.data)
+                    success = True
+                except:
+                    self.data = {}
+                    print("JSON load failed.")
+                    # TODO: make a QMessageBox for this
+                    success = False
+        else:
+            print("File does not exist.")
+            success = False
         return success
 
     def onBrowseButton(self):
@@ -649,7 +664,7 @@ class matrixTables(QWizardPage):
         print(f"PP exit: data = {self.parent.data}")
         return validated
 
-class savePage(QWizardPage):
+class saveProteinPage(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
@@ -721,6 +736,8 @@ class savePage(QWizardPage):
             final_data = self.existing_data | final_data
             with open(self.filename.text(), "w") as f:
                 json.dump(final_data, f)
+        if success:
+            self.parent.protein_file = self.filename.text()
         return success
 
     def onBrowseButton(self):
@@ -735,22 +752,362 @@ class savePage(QWizardPage):
     def validatePage(self):
         return self.save_success
 
-class ProteinBuilder(QWizard):
+class loadSimulation(QWizardPage):
+    def __init__(self, parent):
+        QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.setTitle("Load existing simulation parameters.")
+
+    def initializePage(self):
+        layout = QVBoxLayout()
+        gl = QGridLayout()
+        self.filename = QLineEdit(os.getcwd())
+        self.load_success = False
+        self.browseButton = QPushButton("Browse") 
+        self.browseButton.setToolTip("Search for a JSON file")
+        self.browseButton.clicked.connect(self.onBrowseButton)
+        self.loadButton = QPushButton("Load") 
+        self.loadButton.setToolTip("Click to import JSON data from this file")
+        self.loadButton.clicked.connect(self.onLoadButton)
+        self.resetButton = QPushButton("Reset")
+        self.resetButton.setToolTip("Delete loaded JSON data and start again")
+        self.resetButton.clicked.connect(self.onResetButton)
+        gl.addWidget(QLabel("Filename:"), 0, 0)
+        gl.addWidget(self.filename, 0, 1)
+        gl.addWidget(self.browseButton, 0, 2)
+        gl.addWidget(self.loadButton, 0, 3)
+        gl.addWidget(self.resetButton, 1, 2)
+        layout.addLayout(gl)
+        self.setLayout(layout)
+
+    def load_from_file(self):
+        print(self.filename.text())
+        with open(self.filename.text()) as f:
+            try:
+                self.sim_data = json.load(f)
+                print(self.sim_data)
+                success = True
+            except:
+                self.sim_data = {}
+                print("JSON load failed.")
+                # TODO: make a QMessageBox for this
+                success = False
+        return success
+
+    def onBrowseButton(self):
+        self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
+                                              os.getcwd(),
+                                              "JSON file (*.json)")
+        self.filename.setText(self.fn)
+
+    def onLoadButton(self):
+        self.load_success = self.load_from_file()
+
+    def onResetButton(self):
+        self.load_success = False
+        self.filename.setText("")
+        self.simName.clear()
+        self.data = {}
+        self.parent.sim_data = {}
+
+    def updateData(self):
+        if self.load_success:
+            self.parent.sim_data = self.sim_data
+            self.parent.sim_data['filename'] = self.filename.text()
+        else:
+            self.parent.data = {}
+
+    def validatePage(self):
+        self.updateData()
+        print(f"SL exit: sim data = {self.parent.sim_data}")
+        return True
+
+class simulationParameters(QWizardPage):
+    def __init__(self, parent):
+        QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.setTitle("Enter simulation parameters.")
+        layout = QVBoxLayout()
+        gl = QGridLayout()
+        self.fwhmLabel     = QLabel("Pulse FWHM(s):")
+        self.fluenceLabel  = QLabel("Fluence (photons per pulse):")
+        self.nSitesLabel   = QLabel("Number of sites in lattice:")
+        self.latticeLabel  = QLabel("Lattice type:")
+        self.repRateLabel  = QLabel("Rep rate (Hz):")
+        self.burnRepsLabel = QLabel("Number of burn reps:")
+        self.tMaxLabel     = QLabel("Maximum binning time (s):")
+        self.dt1Label      = QLabel("Binning time step (s):")
+        self.dt2Label      = QLabel("Dark time step (s):")
+        self.binwidthLabel = QLabel("Binwidth (s):")
+        self.nCountsLabel  = QLabel("Number of counts:")
+        self.nRepeatsLabel = QLabel("Number of repeats:")
+        self.debugLabel    = QLabel("Debug mode:")
+
+        self.fwhmLabel.setToolTip("The FWHM of the pulse, in seconds.")
+        self.fluenceLabel.setToolTip("The fluence in photons per pulse.")
+        self.nSitesLabel.setToolTip('''Number of sites in the lattice.
+Generally unless you are working with aggregates of a known, specific size,
+it's best to leave this on the order of 100 (especially if hopping is allowed,
+and if some states are not present on every site, for statistical reasons.)''')
+        self.latticeLabel.setToolTip('''Sets the connectivity of the lattice.
+Unless you have good reason to think your aggregate is a line, you can
+probably ignore this; changing from honeycomb to square to hex generally
+does not make a qualitative difference to the results.''')
+        self.repRateLabel.setToolTip("Laser repetition rate in Hz.")
+        self.burnRepsLabel.setToolTip('''"Burn reps" are laser reps performed
+at the start of the simulation *without binning decays*, in order to allow
+steady state populations to develop and simulate the experimental situation,
+where the system's probably already in the steady state before measurement
+begins. The actual number you need is dependent on the system to an extent;
+see the output files labelled "_population.csv" for the total population
+of each state at the end of each rep to get a better idea.''')
+        self.tMaxLabel.setToolTip("Time over which decays will be binned.")
+        self.dt1Label.setToolTip('''Time step to use during the measurement
+time, i.e. from t = 0 to whatever value you give t_max directly above.''')
+        self.dt2Label.setToolTip('''Time step to use in between measurement
+phases, i.e. from t = t_max up to t = 1 / rep_rate, when the next pulse begins.
+This time step should generally be longer since we're not binning so knowledge
+of the precise timing of events is unimportant, and also the shorter this
+time step is the longer the simulation will take.''')
+        self.binwidthLabel.setToolTip("Binwidth in seconds.")
+        self.nCountsLabel.setToolTip('''Number of counts to simulate to. Note
+that this is not a strict limit; the code will periodically check what the
+total number of emissive decays (those visible to the detector) is per bin,
+and will stop once any bin reaches n_counts or greater.''')
+        self.nRepeatsLabel.setToolTip('''Number of repeats to do. The way this
+works is that each repeat is set up with a new RNG seed; additionally, if
+there are some abundances < 1.0, the code will randomise the locations of
+proteins with and without the given states for each repeat.''')
+        self.debugLabel.setToolTip('''Set debug mode on or off. Generally
+you can probably leave it off; it's mostly for my benefit, or for if you want
+to modify the guts of the fortran code in some way.''')
+
+        gl.addWidget(self.fwhmLabel,     0, 0)
+        gl.addWidget(self.fluenceLabel,  1, 0)
+        gl.addWidget(self.nSitesLabel,   2, 0)
+        gl.addWidget(self.latticeLabel,  3, 0)
+        gl.addWidget(self.repRateLabel,  4, 0)
+        gl.addWidget(self.burnRepsLabel, 5, 0)
+        gl.addWidget(self.tMaxLabel,     6, 0)
+        gl.addWidget(self.dt1Label,      7, 0)
+        gl.addWidget(self.dt2Label,      8, 0)
+        gl.addWidget(self.binwidthLabel, 9, 0)
+        gl.addWidget(self.nCountsLabel,  10, 0)
+        gl.addWidget(self.nRepeatsLabel, 11, 0)
+        gl.addWidget(self.debugLabel,    12, 0)
+
+        self.fwhmBox     = QLineEdit()
+        self.fluenceBox  = QLineEdit()
+        self.nSitesBox   = QLineEdit()
+        self.latticeBox  = QComboBox()
+        self.repRateBox  = QLineEdit()
+        self.burnRepsBox = QLineEdit()
+        self.tMaxBox     = QLineEdit()
+        self.dt1Box      = QLineEdit()
+        self.dt2Box      = QLineEdit()
+        self.binwidthBox = QLineEdit()
+        self.nCountsBox  = QLineEdit()
+        self.nRepeatsBox = QLineEdit()
+        self.debugBox    = QCheckBox()
+        self.latticeBox.addItem("hex")
+        self.latticeBox.addItem("square")
+        self.latticeBox.addItem("honeycomb")
+        self.latticeBox.addItem("line")
+        self.boxes = [self.fwhmBox, self.fluenceBox, self.nSitesBox,
+                 self.latticeBox, self.repRateBox, self.burnRepsBox,
+                 self.tMaxBox, self.dt1Box, self.dt2Box,
+                 self.binwidthBox, self.nCountsBox,
+                 self.nRepeatsBox, self.debugBox]
+        self.sim_keys = ["fwhm",  "fluence",  "n_sites",  "lattice", 
+                    "rep_rate",  "burn_reps",  "tmax",  "dt1",  "dt2",
+                    "binwidth",  "n_counts",  "n_repeats", "debug"]
+
+        gl.addWidget(self.fwhmBox,     0, 1)
+        gl.addWidget(self.fluenceBox,  1, 1)
+        gl.addWidget(self.nSitesBox,   2, 1)
+        gl.addWidget(self.latticeBox,  3, 1)
+        gl.addWidget(self.repRateBox,  4, 1)
+        gl.addWidget(self.burnRepsBox, 5, 1)
+        gl.addWidget(self.tMaxBox,     6, 1)
+        gl.addWidget(self.dt1Box,      7, 1)
+        gl.addWidget(self.dt2Box,      8, 1)
+        gl.addWidget(self.binwidthBox, 9, 1)
+        gl.addWidget(self.nCountsBox,  10, 1)
+        gl.addWidget(self.nRepeatsBox, 11, 1)
+        gl.addWidget(self.debugBox,    12, 1)
+
+        layout.addLayout(gl)
+        self.setLayout(layout)
+
+    def initializePage(self):
+        if len(self.parent.sim_data) > 0:
+            parent_keys = self.parent.sim_data.keys()
+            for sk, b in zip(self.sim_keys, self.boxes):
+                if sk in parent_keys:
+                    if sk == "lattice":
+                        for i in range(b.count()):
+                            if b.itemText(i) == self.parent.sim_data[sk]:
+                                b.setCurrentIndex(i)
+                    elif sk == 'debug':
+                        if type(self.parent.sim_data[sk]) == bool:
+                            b.setChecked(self.parent.sim_data[sk])
+                    else:
+                        b.setText(str(self.parent.sim_data[sk]))
+
+    def cleanupPage(self):
+        for sk, b in zip(self.sim_keys, self.boxes):
+            if sk == 'debug':
+                b.setCheckState(False)
+            if sk == 'lattice':
+                b.setCurrentIndex(0)
+            else:
+                b.setText("")
+
+    def updateData(self):
+        for sk, b in zip(self.sim_keys, self.boxes):
+            if sk == 'debug':
+                v = b.isChecked()
+            if sk == 'lattice':
+                v = b.currentIndex()
+            elif sk in ['n_sites', 'burn_reps', 'n_counts', 'n_repeats']:
+                v = int(b.text() if b.text() != '' else 0)
+            else:
+                v = float(b.text() if b.text() != '' else 0.0)
+            self.parent.sim_data[sk] = v
+
+    def checkData(self):
+        '''
+        check the entered data to make sure it's all tickety boo
+        '''
+        validated = True
+        msgs = []
+        for sk in self.sim_keys:
+            if sk not in ['debug', 'lattice']:
+                if self.parent.sim_data[sk] <= 0.0:
+                    msgs.append(f"{sk} cannot be <= 0.")
+                    validated = False
+        if self.parent.sim_data['dt1'] >= self.parent.sim_data['binwidth']:
+            msgs.append("Measurement time step dt1 should be smaller than binwidth.")
+            validated = False
+        if self.parent.sim_data['dt1'] > self.parent.sim_data['dt2']:
+            msgs.append("Measurement time step dt1 should be smaller than dark time step dt2.")
+            validated = False
+        return validated, msgs
+
+    def validatePage(self):
+        '''
+        update the parent's data, check it, print the current
+        dict for my benefit, then carry on if all is well
+        '''
+        self.updateData()
+        validated, msgs = self.checkData()
+        if not validated:
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
+        print(f"SP exit: sim_data = {self.parent.sim_data}")
+        return validated
+
+class saveSimPage(QWizardPage):
+    def __init__(self, parent):
+        QWizardPage.__init__(self, parent)
+        self.parent = parent
+        self.setTitle("Save")
+        self.setSubTitle("Save simulation data to file.")
+
+    def initializePage(self):
+        layout = QVBoxLayout()
+        gl = QGridLayout()
+        if 'filename' in self.parent.sim_data:
+            self.filename = QLineEdit(self.parent.sim_data['filename'])
+        else:
+            self.filename = QLineEdit(os.getcwd())
+        self.save_success = False
+        self.load_success = False
+        self.existing_data = {}
+        self.browseButton = QPushButton("Browse") 
+        self.browseButton.setToolTip("Search for a JSON file")
+        self.browseButton.clicked.connect(self.onBrowseButton)
+        self.saveButton = QPushButton("Save") 
+        self.saveButton.setToolTip("Click to save JSON data to this file")
+        self.saveButton.clicked.connect(self.onSaveButton)
+        gl.addWidget(QLabel("Filename:"), 0, 0)
+        gl.addWidget(self.filename, 0, 1,)
+        gl.addWidget(self.browseButton, 0, 2)
+        gl.addWidget(self.saveButton, 0, 3)
+        layout.addLayout(gl)
+        self.setLayout(layout)
+
+    def save_to_file(self):
+        dd = self.parent.sim_data
+        # don't need these in the JSON
+        if 'filename' in dd:
+            # filename is only a key if a file was loaded at the start
+            del dd['filename']
+        success = True
+        overwrite = True
+        # if the filename exists, warn user
+        if os.path.isfile(self.filename.text()):
+            self.overwriteCheck = QMessageBox.question(self,
+                "", "File already exists. Overwrite?")
+            if self.overwriteCheck == QMessageBox.StandardButton.NoButton:
+                overwrite = False
+            if overwrite:
+                try:
+                    with open(self.filename.text(), "w") as f:
+                        json.dump(dd, f)
+                except:
+                    print("Failed to save JSON.")
+                    success = False
+            else:
+                success = False
+        else:
+            try:
+                with open(self.filename.text(), "w") as f:
+                    json.dump(dd, f)
+            except:
+                print("Failed to save JSON.")
+                success = False
+        if success:
+            self.parent.sim_file = self.filename.text()
+        return success
+
+    def onBrowseButton(self):
+        self.fn, _ = QFileDialog.getSaveFileName(self, "Select JSON file",
+                                              os.getcwd(),
+                                              "JSON file (*.json)")
+        self.filename.setText(self.fn)
+
+    def onSaveButton(self):
+        self.save_success = self.save_to_file()
+
+    def validatePage(self):
+        return self.save_success
+
+
+class STOPSetup(QWizard):
     def __init__(self):
         super().__init__()
+        self.resize(QtCore.QSize(800, 600))
         self.data = {}
+        self.sim_data = {}
+        self.protein_file = ""
+        self.protein = ""
+        self.sim_file = ""
         self.addPage(loadExisting(self))
         self.addPage(nameNumber(self))
         self.addPage(namePigmentsStates(self))
         self.addPage(pigmentProperties(self))
         self.addPage(matrixTables(self))
-        self.addPage(savePage(self))
-        self.setWindowTitle("Protein builder for STOP")
+        self.addPage(saveProteinPage(self))
+        self.addPage(loadSimulation(self))
+        self.addPage(simulationParameters(self))
+        self.addPage(saveSimPage(self))
+        self.setWindowTitle("Setup wizard for STOP")
 
 if __name__ == "__main__":
     app =QtWidgets.QApplication([])
 
-    widget = ProteinBuilder()
+    widget = STOPSetup()
     widget.show()
 
     sys.exit(app.exec())

@@ -52,33 +52,48 @@ if __name__ == "__main__":
             description="set up aggregate simulation",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     # required arguments
-    parser.add_argument('-p', '--protein', type=str, required=True,
-            help=r'Choice of protein (check protein.json)')
+    parser.add_argument('-pf', '--protein_file', type=str, required=True,
+            help=r'File to load protein data from in JSON format')
     # optional arguments
+    parser.add_argument('-p', '--protein', type=str, default=None,
+            help=r'Choice of protein within that file, if there are multiple')
     parser.add_argument('-o', '--outdir', type=str, default='out',
             help="Output directory (default: 'out')")
+    parser.add_argument('-d', '--detergent', type=bool, default=False,
+            help="Toggle detergent conditions (if True, prevent excitation hopping)")
     parser.add_argument('-n', '--n_procs', type=int, default=0,
             help="Number of MPI processes to use (default is whatever os.cpu_count() returns")
 
     args = parser.parse_args()
 
-    with open("protein.json", "r") as f:
+    with open(args.protein_file, "r") as f:
         protein_json = json.load(f)
 
     with open("simulation.json", "r") as f:
         simulation_json = json.load(f)
 
-    if args.protein in protein_json:
-        protein = protein_json[args.protein]
+    if args.protein is not None:
+        if args.protein in protein_json:
+            protein = protein_json[args.protein]
+        else:
+            raise KeyError("Invalid protein choice. Add it to {args.protein_file} or choose a different file.")
     else:
-        raise KeyError("Invalid protein choice. Add it to protein.json!")
+        # try using the filename as a key
+        k = os.path.splitext(os.path.basename(args.protein_file))[0]
+        if k in protein_json:
+            protein = protein_json[k]
+            print(f"Warning: no protein name given; using protein data {k}.")
+            print(protein)
+        else:
+            raise KeyError(f"Couldn't find a valid set of protein data. Check options -pf and -p.")
 
-    detergent = True
-    for h in protein['hop']:
-        if h > 0.0:
-            detergent = False
-    if detergent:
+    if args.detergent:
         connected = "detergent"
+        for i, h in enumerate(protein['hop']):
+            if h > 0.0:
+                print("Detergent toggle is on, but there are nonzero hopping rates.")
+                print("Zeroing them out.")
+            protein['hop'][i] = 0.0
     else:
         connected = "aggregate"
     abundance_str = ""
