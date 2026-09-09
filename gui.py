@@ -1001,15 +1001,12 @@ the fortran code in some way.''')
     def updateData(self):
         for sk, b in zip(self.sim_keys, self.boxes):
             if sk == 'debug':
-                print(f"sim params update data: debug: {sk}")
                 v = b.isChecked()
             elif sk == 'lattice':
-                print(f"sim params update data: lattice: {sk}")
                 v = b.currentText()
             elif sk in ['n_sites', 'burn_reps', 'n_counts', 'n_repeats']:
                 v = int(b.text() if b.text() != '' else 0)
             else:
-                print(f"sim params update data: else: {sk}")
                 v = float(b.text() if b.text() != '' else 0.0)
             self.parent.sim_data[sk] = v
 
