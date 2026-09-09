@@ -728,7 +728,9 @@ class saveProteinPage(QWizardPage):
         if 'filename' in final_data:
             # filename is only a key if a file was loaded at the start
             del final_data[name]['filename']
-        del final_data[name]['decay']
+        if 'decay' in final_data:
+            # decay won't be there if we've already saved a file
+            del final_data[name]['decay']
         success = True
         self.existing_data = {}
         # if the filename exists, try to open it and parse the JSON
@@ -1134,11 +1136,11 @@ class runPage(QWizardPage):
         self.process = None
         self.layout = QVBoxLayout()
         self.gl = QGridLayout()
-        self.detergentLabel = QLabel("Detergent:")
-        self.detergentLabel.setToolTip(
-'''Set detergent condition on or off. If this box is checked, the code will
-zero out hopping rates for all states, effectively simulating a set of
-completely isolated proteins with no energy transfer between them.''')
+        self.connectedLabel = QLabel("Connected:")
+        self.connectedLabel.setToolTip(
+'''Set connectivity on or off. Uncheck this box to zero out hopping rates
+for all states, effectively simulating a set of completely isolated
+proteins with no energy transfer between them.''')
         self.coresLabel = QLabel("Number of cores to use:")
         self.coresLabel.setToolTip(
 '''The fortran code can use OpenMPI to reduce simulation time by running on
@@ -1147,8 +1149,14 @@ n > 1 will probably improve performance, but don't set it to more than the
 number of cores you actually have, that'll probably just make it slower.''')
         self.proteinFileBox = QLineEdit()
         self.proteinChoice = QLabel()
+        self.outputDirBox = QLineEdit()
+        self.outputDirLabel = QLabel("Main output directory:")
+        self.outputDirLabel.setToolTip(
+'''Change the main output directory if necessary. If not given, the output
+will by put within a folder named "out" in the current directory.''')
         self.simulationFileBox = QLineEdit()
-        self.detergentOption = QCheckBox()
+        self.connectedOption = QCheckBox()
+        self.connectedOption.setChecked(True)
         self.coresBox = QSpinBox()
         self.coresBox.setValue(1)
         cs = f"Recommended max cores (os.cpu_count()): {os.cpu_count()}"
@@ -1157,17 +1165,19 @@ number of cores you actually have, that'll probably just make it slower.''')
         self.gl.addWidget(QLabel("Protein file:"), 0, 0)
         self.gl.addWidget(QLabel("Protein name:"), 1, 0)
         self.gl.addWidget(QLabel("Simulation file:"), 2, 0)
-        self.gl.addWidget(self.detergentLabel, 3, 0)
-        self.gl.addWidget(self.coresLabel, 4, 0)
+        self.gl.addWidget(self.outputDirLabel, 3, 0)
+        self.gl.addWidget(self.connectedLabel, 4, 0)
+        self.gl.addWidget(self.coresLabel, 5, 0)
         self.gl.addWidget(self.proteinFileBox, 0, 1)
         self.gl.addWidget(self.proteinChoice, 1, 1)
         self.gl.addWidget(self.simulationFileBox, 2, 1)
-        self.gl.addWidget(self.detergentOption, 3, 1)
-        self.gl.addWidget(self.coresBox, 4, 1)
-        self.gl.addWidget(self.coresGuideLabel, 4, 2)
+        self.gl.addWidget(self.outputDirBox, 3, 1)
+        self.gl.addWidget(self.connectedOption, 4, 1)
+        self.gl.addWidget(self.coresBox, 5, 1)
+        self.gl.addWidget(self.coresGuideLabel, 5, 2)
         self.runButton = QPushButton("Run simulation")
         self.runButton.clicked.connect(self.run)
-        self.gl.addWidget(self.runButton, 5, 0, 1, -1)
+        self.gl.addWidget(self.runButton, 6, 0, 1, -1)
         self.output_area = QPlainTextEdit()
         self.output_area.setReadOnly(True)
 
@@ -1182,6 +1192,11 @@ number of cores you actually have, that'll probably just make it slower.''')
         self.proteinFileBox.setText(self.parent.protein_file)
         self.proteinChoice.setText(self.parent.protein)
         self.simulationFileBox.setText(self.parent.sim_file)
+        self.nonzero_hop = False
+        for h in self.parent.data['hop']:
+            if h > 0.0:
+                self.nonzero_hop = True
+        self.connectedOption.setChecked(self.nonzero_hop)
 
     def run(self):
         '''
@@ -1198,12 +1213,13 @@ number of cores you actually have, that'll probably just make it slower.''')
 
         pf = f"{self.parent.protein_file}"
         p = f"{self.parent.protein}"
-        d = f"{self.detergentOption.isChecked()}"
+        c = f"{self.connectedOption.isChecked()}"
         n = f"{self.coresBox.value()}"
-        self.process.start(
-                "python",
-                ["main.py", "-pf", pf, "-p", p, "-d", d, "-n", n],
-                )
+        args = ["main.py", "-pf", pf, "-p", p, "-c", c, "-n", n]
+        if self.outputDirBox.text() != "":
+            args.append("-o")
+            args.append(self.outputDirBox.text())
+        self.process.start("python", args)
 
     def read_stdout(self):
         data = self.process.readAllStandardOutput()
@@ -1236,6 +1252,7 @@ number of cores you actually have, that'll probably just make it slower.''')
         if self.process is None:
             return
         self.process.kill()
+        self.output_area.appendPlainText("Simulation stopped.")
         self.process = None
 
     def validatePage(self):

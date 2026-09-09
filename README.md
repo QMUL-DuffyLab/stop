@@ -1,16 +1,16 @@
 STOP: Simulated TCSPC On Proteins
 =================================
 
-do you like to shoot lasers at proteins? have you ever thought that maybe the whole process of getting hold of a protein and a laser in real life to do that was a bit too much effort? well, do i have the software for you! it simulates the process of firing an expensive laser at your weird little protein, and you can do it from the comfort of your own desk or couch or wherever you like, you wastrel.
+do you like to shoot lasers at proteins? have you ever thought that maybe the whole process of getting hold of a protein and a laser in real life to do that was a bit too much effort? well, do i have the software for you! it simulates the process of firing an expensive laser over and over again at your poor little protein, and you can do it from the comfort of your own desk or couch or wherever you like.
 
-on a more serious note, this is some fortran code to simulate TCSPC experiments on arbitrary proteins (with some constraints, which i'll go into). the idea is that you set up your protein using JSON or python, there's some python code to write all the relevant parameters to fortran-friendly files and then an MPI fortran kernel to do the heavy lifting. once the simulated experiments are done, reconvolution fits are performed to get amplitude-weighted lifetimes and so on.
+the idea is that you figure out the details of your protein, what it's made up of and how you think energy transfer works. Then you encode that into a protein parameter file either by writing some JSON or using a GUI, and then specify some simulation (experiment) parameters like the laser fluence and rep rate and so on. There's some python code to write all those relevant parameters to fortran-friendly files, and then an MPI fortran kernel to do the heavy lifting. once the simulated experiments are done, reconvolution fits are performed to get amplitude-weighted lifetimes and so on.
 
 Installation
 ============
 
-You'll need a relatively modern version of Python (I think anything >3.8 should do, so any version from the last five years or so) with numpy, scipy, matplotlib, pandas and sympy, as well as a modern Fortran compiler with OpenMPI. I'm using GCC 14.2.1 on Linux and it works fine but all the Fortran is strictly F2008 so any modern Fortran compiler should work. It also all works on WSL; I have not and will not figure out how to get it to work on windows so do not ask me.
+You'll need a modern version of Python (I'm using 3.14) with numpy, scipy, matplotlib, pandas, sympy, as well as pyqt6 if you want to use the GUI and a modern Fortran compiler with OpenMPI to compile the fortran kernel. I'm using GCC 14.2.1 on Linux and it works fine, but all the Fortran is strictly F2008 so any modern Fortran compiler should work. It also all works on WSL; I have not and will not figure out how to get it to work natively on windows so do not ask me.
 
-The easiest way to ensure you have all of this is to first install miniforge (see [here](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install)), clone this repo and then do
+The easiest way to ensure you have everything you need is to first install miniforge (see [here](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install)), clone this repo and then do
 ```
 mamba create -f environment.yml
 mamba activate stop
@@ -21,7 +21,30 @@ Note that e.g. ipython and jupyter are not included in that YAML file because th
 Setup
 =====
 
-The Python code uses two JSON files, one containing protein parameters and one containing simulation parameters; examples are included in `protein.json` and `simulation.json`.
+The Python code uses two JSON files, one containing protein parameters and one containing simulation parameters; examples are included in `protein.json` and `simulation.json`. You can set these up manually if you'd like; skip to the [protein](#protein-parameters) and [simulation](#simulation-parameters) explain how the JSON is structured. Alternatively, run `python gui.py` from the root directory of the repo. This will take you through the process of creating/importing/modifying the relevant input files and then finally will run the code for you with a box to show the terminal output.
+
+Running
+=======
+
+As mentioned above, if you do `python gui.py` and set up the input files, eventually you'll reach a screen with some final options and a big button that says "Run simulation". Click this button to Run simulation. The terminal output will appear in the box below the button.
+
+By default, the Python wrapper will create a folder `out` inside the code folder, and put the output files in there with a subfolder hierarchy based on the name of the protein, the fluence and rep rate, and so on. Once you've run a simulation and it's finished, click around in that output folder, hopefully it will be fairly self-explanatory.
+
+Alternatively you can run it manually in a terminal by calling `python main.py ` with various options. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is `-pf FILE`, where `FILE` should be a filename containing JSON data for the protein you want to simulate.
+Optional ones are:
+
+- `-p PROTEIN_NAME`, where `PROTEIN_NAME` should be a string. The code will search for the key `PROTEIN_NAME` in the protein file given. This is so that you can (for example) make one big protein.json file with lots of details of different proteins in it and then pick one. If not given, the code will search for keys in the protein file: if there's only one, or if there's one that matches the filename, it will use that (and print a warning).
+- `-o OUTPUT_PATH`, where `OUTPUT_PATH` is a string. This changes the root directory for the output files to be placed in. If not given, will default to `./out` (i.e. a new folder named "out" in your current directory).
+- `-c CONNECTED`, where `CONNECTED` should be True or False. if True, hopping rates will be left as-is in order to simulate a connected aggregate of proteins; if False, this will zero out all hopping rates to simulate an ensemble of unconnected proteins (e.g. if you're experimenting on membrane proteins in detergent).
+- `-n NUM_CORES`, where `N_CORES` should be a number. This is the number of cores that will be passed to the OpenMPI call in the fortran - more cores will make it run faster so long as you have the cores available on your machine. Setting this to use more cores than you actually have will make the performance worse, though. The GUI will show what `os.cpu_count()` returns, which you should probably take as a maximum recommended value, and actually the best value is quite probably smaller than that. On a modern laptop try 2 or 4 and see how it goes.
+
+The Python wrapper will take all these options, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns. By default it will use the decay times of the protein states as a starting point and try 1- to n-exponential fits based on those.
+
+Note that the fitting script is not that sophisticated really; it cuts off the trace at the peak and fits 1- to n-exponentials to the tail, then fixes the fitted time constants in place and does a reconvolution fit with the IRF for the amplitudes.
+It does not do anything more complicated than that; the output traces are just CSVs and therefore hopefully it should be possible to load them into another fitting program fairly easily.
+
+Parameter JSON setup
+====================
 
 Protein parameters
 ------------------
@@ -87,17 +110,6 @@ This is a simpler little file. I think that most if not all of these should be s
 - `debug` should be true or false. if true, the fortran will output some extra stuff about move statistics that you probably don't need
 
 Note: The fitting code will output various CSV and text files containing the fitted arrays, details of the fits and errors and so on, but it doesn't do anything sophisticated to compare the fit between repeats.
-
-Running
-=======
-
-Call it from a command line with between one and three arguments. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is the name of the protein you want to simulate, and should be one of the names in `protein.json`. Optional ones are an output path, which if not given will default to `./out` (i.e. a new folder named "out" in your current directory). Third is the number of cores you want to run it on - if you don't give this one it'll do `os.cpu_count()` and just use that, which may not be optimal. The Python will create the output path, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns. By default it will use the decay times of the states as a starting point and try 1- to n-exponential fits based on those.
-
-Note that the fitting script is not that sophisticated really; it cuts off the trace at the peak and fits 1- to n-exponentials to the tail, then fixes the fitted time constants in place and does a reconvolution fit with the IRF for the amplitudes.
-It does not do anything more complicated than that; the output traces are just CSVs and therefore hopefully it should be possible to load them into another fitting program fairly easily.
-
-TODO: make `tau_init` a parameter.
-
 
 FAQS
 ====

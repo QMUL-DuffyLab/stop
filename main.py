@@ -59,8 +59,8 @@ if __name__ == "__main__":
             help=r'Choice of protein within that file, if there are multiple')
     parser.add_argument('-o', '--outdir', type=str, default='out',
             help="Output directory (default: 'out')")
-    parser.add_argument('-d', '--detergent', type=bool, default=False,
-            help="Toggle detergent conditions (if True, prevent excitation hopping)")
+    parser.add_argument('-c', '--connected', type=bool, default=False,
+            help="Toggle connectedness (if False, prevent excitation hopping)")
     parser.add_argument('-n', '--n_procs', type=int, default=0,
             help="Number of MPI processes to use (default is whatever os.cpu_count() returns")
 
@@ -78,24 +78,30 @@ if __name__ == "__main__":
         else:
             raise KeyError("Invalid protein choice. Add it to {args.protein_file} or choose a different file.")
     else:
-        # try using the filename as a key
-        k = os.path.splitext(os.path.basename(args.protein_file))[0]
-        if k in protein_json:
+        # if there's only one protein in this file use that and warn
+        if len(protein_json) == 1:
+            k = list(protein_json.keys())[0]
+            print(f"No protein name given; using protein name {k}.")
             protein = protein_json[k]
-            print(f"Warning: no protein name given; using protein data {k}.")
-            print(protein)
         else:
-            raise KeyError(f"Couldn't find a valid set of protein data. Check options -pf and -p.")
+            # try using the filename as a key
+            k = os.path.splitext(os.path.basename(args.protein_file))[0]
+            if k in protein_json:
+                protein = protein_json[k]
+                print(f"Warning: no protein name given; using protein data {k}.")
+                print(protein)
+            else:
+                raise KeyError(f"Couldn't find a valid set of protein data. Check options -pf and -p.")
 
-    if args.detergent:
-        connected = "detergent"
+    if args.connected:
+        connected_str = "connected"
+    else:
+        connected_str = "unconnected"
         for i, h in enumerate(protein['hop']):
             if h > 0.0:
-                print("Detergent toggle is on, but there are nonzero hopping rates.")
+                print("Connected is set to False, but there are nonzero hopping rates.")
                 print("Zeroing them out.")
             protein['hop'][i] = 0.0
-    else:
-        connected = "aggregate"
     abundance_str = ""
     for i, ab in enumerate(protein['abundance']):
         if ab < 1.0:
@@ -103,7 +109,7 @@ if __name__ == "__main__":
     fstr = np.format_float_scientific(simulation_json['fluence'])
     rstr = np.format_float_scientific(simulation_json['rep_rate'])
     outdir = os.path.join(args.outdir,
-            f"{args.protein}", connected,
+            f"{args.protein}", connected_str,
             f"fluence_{fstr}", f"rep_rate_{rstr}")
     # add abundance information if it's there
     if len(abundance_str) > 1:
