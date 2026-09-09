@@ -75,7 +75,8 @@ Otherwise, click Next to start specifying the parameters of your protein.
     def initializePage(self):
         layout = QVBoxLayout()
         gl = QGridLayout()
-        self.filename = QLineEdit(os.getcwd())
+        fstr = os.path.join(os.getcwd(), "protein.json")
+        self.filename = QLineEdit(fstr)
         self.load_success = False
         self.browseButton = QPushButton("Browse") 
         self.browseButton.setToolTip("Search for a JSON file")
@@ -148,7 +149,6 @@ Will be used to generate output directory structure.''')
 
     def validatePage(self):
         self.updateData()
-        print(f"LE exit: data = {self.parent.data}")
         return True
 
 class nameNumber(QWizardPage):
@@ -234,7 +234,6 @@ class nameNumber(QWizardPage):
         if not validated:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        print(f"NN exit: data = {self.parent.data}")
         return validated
 
 class namePigmentsStates(QWizardPage):
@@ -366,7 +365,6 @@ class namePigmentsStates(QWizardPage):
         if not validated:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        print(f"NPS exit: data = {self.parent.data}")
         return validated
 
 class pigmentProperties(QWizardPage):
@@ -529,7 +527,6 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         if not validated:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        print(f"PP exit: data = {self.parent.data}")
         return validated
 
 class MatrixTable(QTableWidget):
@@ -643,7 +640,6 @@ class matrixTables(QWizardPage):
         self.parent.data["ann"] = ann.tolist()
         self.parent.data["ann_remainder"] = ann_rem.tolist()
         self.fields = ["intra", "ann", "ann_remainder"]
-        print(f"MT exit: data = {self.parent.data}")
 
     def checkData(self):
         '''
@@ -686,7 +682,6 @@ class matrixTables(QWizardPage):
         if not validated:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        print(f"PP exit: data = {self.parent.data}")
         return validated
 
 class saveProteinPage(QWizardPage):
@@ -753,9 +748,10 @@ class saveProteinPage(QWizardPage):
 
             if self.overwriteCheck == QMessageBox.StandardButton.NoButton:
                 overwrite = False
-
             if overwrite:
-                self.total_data = self.existing_data | final_data
+                total_data = self.existing_data | final_data
+                with open(self.filename.text(), "w") as f:
+                    json.dump(total_data, f)
             else:
                 success = False
         else:
@@ -790,7 +786,8 @@ class loadSimulation(QWizardPage):
     def initializePage(self):
         layout = QVBoxLayout()
         gl = QGridLayout()
-        self.filename = QLineEdit(os.getcwd())
+        fstr = os.path.join(os.getcwd(), "simulation.json")
+        self.filename = QLineEdit(fstr)
         self.load_success = False
         self.browseButton = QPushButton("Browse") 
         self.browseButton.setToolTip("Search for a JSON file")
@@ -850,7 +847,6 @@ class loadSimulation(QWizardPage):
 
     def validatePage(self):
         self.updateData()
-        print(f"SL exit: sim data = {self.parent.sim_data}")
         return True
 
 class simulationParameters(QWizardPage):
@@ -1046,7 +1042,6 @@ the fortran code in some way.''')
         if not validated:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        print(f"SP exit: sim_data = {self.parent.sim_data}")
         return validated
 
 class saveSimPage(QWizardPage):
@@ -1212,10 +1207,11 @@ will by put within a folder named "out" in the current directory.''')
         self.process.finished.connect(self.run_finished)
 
         pf = f"{self.parent.protein_file}"
+        sf = f"{self.parent.sim_file}"
         p = f"{self.parent.protein}"
         c = f"{self.connectedOption.isChecked()}"
         n = f"{self.coresBox.value()}"
-        args = ["main.py", "-pf", pf, "-p", p, "-c", c, "-n", n]
+        args = ["main.py", "-pf", pf, "-sf", sf, "-p", p, "-c", c, "-n", n]
         if self.outputDirBox.text() != "":
             args.append("-o")
             args.append(self.outputDirBox.text())

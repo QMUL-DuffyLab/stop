@@ -52,11 +52,15 @@ if __name__ == "__main__":
             description="set up aggregate simulation",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     # required arguments
-    parser.add_argument('-pf', '--protein_file', type=str, required=True,
+    parser.add_argument('-pf', '--protein_file', type=str,
+            default='protein.json',
+            help=r'File to load protein data from in JSON format')
+    parser.add_argument('-sf', '--simulation_file', type=str,
+            default='simulation.json',
             help=r'File to load protein data from in JSON format')
     # optional arguments
     parser.add_argument('-p', '--protein', type=str, default=None,
-            help=r'Choice of protein within that file, if there are multiple')
+            help=r'Name of protein within protein file, if there are multiple')
     parser.add_argument('-o', '--outdir', type=str, default='out',
             help="Output directory (default: 'out')")
     parser.add_argument('-c', '--connected', type=bool, default=False,
@@ -69,7 +73,7 @@ if __name__ == "__main__":
     with open(args.protein_file, "r") as f:
         protein_json = json.load(f)
 
-    with open("simulation.json", "r") as f:
+    with open(args.simulation_file, "r") as f:
         simulation_json = json.load(f)
 
     if args.protein is not None:
