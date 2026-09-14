@@ -6,6 +6,7 @@ import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
+from scipy.signal import savgol_filter
 from scipy.special import factorial
 
 def get_histogram(filename):
@@ -19,17 +20,21 @@ def get_histogram(filename):
     with open(filename, "r") as f:
         lines = [line.rstrip() for line in f]
     labels = lines[0].split(" ")
+    labels.append("Emitted")
     emissive_str = lines[1].split(" ")
     emissive = [True if s == "T" else False for s in emissive_str]
     str_array = [line.split(" ") for line in lines[2:]]
-    bins = np.array([row[0] for row in str_array]).astype(float)
-    counts = np.array([row[1:] for row in str_array]).astype(float)
+    data = np.array([row for row in str_array]).astype(float)
+    bins = data[:, 0]
+    counts = data[:, 1:]
     emissive_counts = counts[:, emissive[1:]]
     if emissive_counts.shape[1] > 1:
         sum_emissive = np.sum(emissive_counts, axis=0)
     else:
         sum_emissive = emissive_counts
-    return labels, bins, counts, sum_emissive
+    all_columns = np.hstack((data, sum_emissive))
+    df = pd.DataFrame({l: c for l, c in zip(labels, all_columns.T)})
+    return labels, bins, counts, sum_emissive, df
 
 def get_si_exponent(x):
     '''
@@ -72,51 +77,20 @@ def plot_setup(bins, nticks, norm_counts=True):
     ax.set_xticklabels(xticklabels)
     return fig, ax
     
-
-def plot_all(labels, bins, counts, outfile):
+def plot_all(df, outfile):
     '''
     big plot with all binned decay pathways plotted, including
     ones which would be invisible to a real detector.
     '''
+    bins = df['Time(s)']
     fig, ax = plot_setup(bins, 4, False)
-    # labels[0] is the bins label. ignore that one
-    for i, l in enumerate(labels[1:]):
-        if np.sum(counts[:, i]) > 0:
-            plt.plot(bins, counts[:, i], label=l)
+    for col in df.columns:
+        if np.sum(df[col]) > 0:
+            plt.plot(df['Time(s)'], df[col], label=col)
     ax.legend()
-    ax.set_ylim([0.1, 1.1 * np.max(counts)])
+    ax.set_ylim([0.8, 1.1 * np.max(df.values)])
     fig.tight_layout()
     plt.savefig(outfile)
-    plt.close()
-
-def plot_gen_ann_hists(gen_file, ann_file, mu):
-    '''
-    plot a grouped histogram of the number of generation and
-    annihilation events per site, along with a scaled Poisson
-    PMF to show how closely the generations resemble a Poisson
-    process. just for debugging really
-    '''
-    gens = np.loadtxt(gen_file)
-    anns = np.loadtxt(ann_file)
-    gen_sums = np.sum(gens[:, 1:], axis=0)
-    ann_sums = np.sum(anns[:, 1:], axis=0)
-    nmax = len(gen_sums)
-    poisson = np.array([np.exp(-mu) * mu**ii / factorial(ii)
-        for ii in range(nmax)])
-    total = np.sum(gen_sums)
-    xticks = [f"{ii:1d}" for ii in range(nmax)]
-    xticks[-1] += "+" # top bin is open-ended in the fortran output
-    fig, ax = plt.subplots()
-    ax.grouped_bar({'Gen': gen_sums, 'Ann': ann_sums}, group_spacing=1)
-    ax.plot(range(nmax), poisson * total, marker='o',
-            color='k', label='Poisson')
-    ax.set_yscale('log')
-    ax.set_ylabel('count')
-    ax.set_xlabel('number of events')
-    ax.set_xticks(range(nmax))
-    ax.set_xticklabels(xticks)
-    ax.legend()
-    fig.savefig(os.path.splitext(gen_file)[0] + ".pdf")
     plt.close()
 
 def plot_all_from_file(histfile):
@@ -124,9 +98,14 @@ def plot_all_from_file(histfile):
     wrap get_histogram and plot_all to make it easier
     if plotting bits in a terminal or whatever
     '''
-    labels, bins, counts, sum_emissive = get_histogram(histfile)
+    labels, bins, counts, sum_emissive, df = get_histogram(histfile)
     outfile = os.path.splitext(histfile)[0] + ".pdf"
-    plot_all(labels, bins, counts, outfile)
+    plot_all(df, outfile)
+
+def apply_savgol(df, window_length=5, polyorder=3, title=None):
+    df_smooth = df.copy()
+    df_smooth['Smoothed'] = savgol_filter(df['Emitted'], window_length=window_length, polyorder=polyorder)
+    return df_smooth
 
 '''
 below is all taken from my old aggregate code
@@ -244,7 +223,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
         sim_json = json.load(f)
     fluence = sim_json["fluence"]
     
-    labels, bins, all_counts, ec = get_histogram(filename)
+    labels, bins, all_counts, ec, df = get_histogram(filename)
 
     all_file = f"{path}_all_decays.pdf"
     plot_all(labels, bins, all_counts, all_file)
