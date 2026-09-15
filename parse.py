@@ -68,11 +68,12 @@ def check(data, key, ptype=None, lb=None, ub=None,
     start messing around with the JSON and putting weird stuff in there
     it'll probably break, that's on you. also note that the bounds
     lb and ub are exclusive, i.e. if you want > 0, set lb = 1
+
+    return True or False;
+    if False also return a message indicating what went wrong.
     '''
     valid = True
     msgs = []
-    # make the data iterable even if it's a single value, so that
-    # the list comp for type checking will always work
     arr = np.array(data[key]).astype(ptype)
     if any([isinstance(ptype, type(item)) for item in arr.flatten()]):
         valid = False
@@ -91,7 +92,8 @@ def check(data, key, ptype=None, lb=None, ub=None,
         shape = tuple([data[dim] for dim in st])
         if arr.shape != shape:
             valid = False
-            msgs.append(f"{key} = {data[key]} has invalid shape {shape}, {arr.shape}.")
+            msgs.append(f"{key} = {data[key]} has invalid "
+            f"shape {shape}, {arr.shape}.")
     if choices is not None: # only for lattice atm so we can just check one
         if data[key] not in choices:
             valid = False
@@ -180,3 +182,120 @@ def parse_simulation(data, keys=None):
     '''
     return parse(data, simulation_spec, keys)
 
+def generate_output_dirs(pj, sj, pname, connected, base_outdir="out"):
+    '''
+    for a given set of protein JSON data `pj`, which may contain specs for
+    multiple proteins, pick the protein `pname` and construct the set of
+    output directories based on that and the simulation parameters `sj`
+    (simulation JSON data) and `connected` (bool controlling whether exciton
+    migration is allowed). Start from a root output directory `base_outdir`.
+    
+    The logic for this is that the most likely things to be changing, at
+    least in my experience of running these simulations, are:
+    - the protein we're simulating
+    - whether it's in an aggregate or detergent (connected or not)
+    - the fluence and rep rate
+    - the presence or absence of some states (e.g. when dealing with mutants)
+    Hence, construct a set of output directories that encode all this
+    information so that when we change these parameters we don't accidentally
+    overwrite all the simulation data. Obviously this isn't the only way to
+    do it, could have timestamps or a database or something, but this is
+    easy to construct and it's always worked fine for me.
+
+    Return the output directory if successful, None otherwise.
+    '''
+    if pname not in pj.keys():
+        raise KeyError("generate_output_dirs: {pname} not in pdata {pdata}")
+    p = pj[pname]
+    if connected:
+        connected_str = "connected"
+    else:
+        connected_str = "unconnected"
+        # NB: is this the best place to do this? almost certainly not
+        # but i can't currently think of a better implementation
+        for i, h in enumerate(p['hop']):
+            if h > 0.0:
+                print("Connected set to False, but hopping rates > 0.")
+                print("Zeroing them out.")
+            p['hop'][i] = 0.0
+
+    fstr = np.format_float_scientific(sj['fluence'])
+    rstr = np.format_float_scientific(sj['rep_rate'])
+    outdir = os.path.join(base_outdir,
+            f"{pname}", connected_str,
+            f"fluence_{fstr}", f"rep_rate_{rstr}")
+
+    abundance_str = ""
+    for i, ab in enumerate(p['abundance']):
+        if ab < 1.0:
+            abundance_str += f"{p['state_names'][i]}_{ab:4.2f}"
+    if len(abundance_str) > 1:
+        outdir = os.path.join(outdir, abundance_str)
+    # fortran will not know about OS directory separators, so
+    # just add an extra one at the end of the path for it here
+    outdir = os.path.join(outdir, "")
+    try:
+        os.makedirs(outdir, exist_ok=True)
+    except:
+        outdir = None
+    print(f"Output directory: {outdir}")
+    return outdir
+
+def write_fortran_inputs(pj, sj, pname, outdir):
+    '''
+    the fortran kernel that actually does the Monte Carlo is, well,
+    it's fortran. i am personally a big fortran enjoyer (if fortran has
+    no fans, that means i am no more on the earth etc.) 
+    but it is perhaps not the best language for doing string
+    operations and traversing file systems and so on. it does many
+    numbers very fast. hence, this function takes protein and 
+    simulation parameters in JSON form (`pj` and `sj` respectively) 
+    along with a protein name `pname` and an output directory
+    `outdir`, and chucks the parameters into two input files in that
+    directory. the fortran then just reads two hardcoded filenames with
+    the parameters in a specific order and gets to work. bosh.
+
+    NB: the fortran expects them *as-is, in this order*.
+    i.e. if you change any of these parameters' types, add/remove them,
+    etc., you will need to go into `src/io.f90` and change the 
+    `get_protein_params` or `get_simulation_params` subroutines
+    respectively to reflect those changes.
+    '''
+    p = pj[pname] # get the JSON data for our specific protein
+    print(p)
+    pf = os.path.join(outdir, "protein_params")
+    with open(pf, 'w') as f:
+        f.write(f"{pname}\n")
+        f.write(f"{p['n_p']}\n")
+        f.write(f"{p['n_s']}\n")
+        f.write(" ".join(p["pigment_names"]) + "\n")
+        f.write(" ".join(p["state_names"]) + "\n")
+        f.write(" ".join([f"{i:4d}" for i in p["which_pigment"]]) + "\n")
+        f.write(" ".join([f"{i:.4e}" for i in p["abundance"]]) + "\n")
+        f.write(" ".join([str(i) for j in p["dist"] for i in j]) + "\n")
+        f.write(" ".join([f"{i:4d}" for i in p["n_tot"]]) + "\n")
+        f.write(" ".join([f"{i:4d}" for i in p["n_thermal"]]) + "\n")
+        f.write(" ".join([f"{i:.4e}" for i in p["hop"]]) + "\n")
+        f.write(" ".join([f"{i:.4e}" for j in p["intra"] for i in j]) + "\n")
+        f.write(" ".join([f"{i:.4e}" for j in p["ann"] for i in j]) + "\n")
+        f.write(" ".join([f"{i:4d}" for j in p["ann_remainder"] for i in j]) + "\n")
+        f.write(" ".join([f"{i:.4e}" for i in p["xsec"]]) + "\n")
+        f.write(" ".join([str(e) for e in p["emissive"]]) + "\n")
+
+    sf = os.path.join(outdir, "simulation_params")
+    with open(sf, 'w') as f:
+        f.write(f"{sj['fwhm']}\n")
+        f.write(f"{sj['fluence']}\n")
+        f.write(f"{sj['n_sites']}\n")
+        f.write(f"{sj['lattice']}\n")
+        f.write(f"{sj['rep_rate']}\n")
+        f.write(f"{sj['burn_reps']}\n")
+        f.write(f"{sj['tmax']}\n")
+        f.write(f"{sj['dt1']}\n")
+        f.write(f"{sj['dt2']}\n")
+        f.write(f"{sj['binwidth']}\n")
+        f.write(f"{sj['n_counts']}\n")
+        f.write(f"{sj['n_repeats']}\n")
+        f.write(f"{outdir}\n")
+        f.write(f"{sj['debug']}\n")
+    return pf, sf

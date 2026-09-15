@@ -6,46 +6,7 @@ import json
 import itertools
 import numpy as np
 import fit
-
-def write_fortran_inputs(pj, sj, name, outdir):
-    p = pj[name] # get the JSON data for our specific protein
-    print(p)
-    pf = os.path.join(outdir, "protein_params")
-    with open(pf, 'w') as f:
-        f.write(f"{name}\n")
-        f.write(f"{p['n_p']}\n")
-        f.write(f"{p['n_s']}\n")
-        f.write(" ".join(p["pigment_names"]) + "\n")
-        f.write(" ".join(p["state_names"]) + "\n")
-        f.write(" ".join([f"{i:4d}" for i in p["which_pigment"]]) + "\n")
-        f.write(" ".join([f"{i:.4e}" for i in p["abundance"]]) + "\n")
-        f.write(" ".join([str(i) for j in p["dist"] for i in j]) + "\n")
-        f.write(" ".join([f"{i:4d}" for i in p["n_tot"]]) + "\n")
-        f.write(" ".join([f"{i:4d}" for i in p["n_thermal"]]) + "\n")
-        f.write(" ".join([f"{i:.4e}" for i in p["hop"]]) + "\n")
-        f.write(" ".join([f"{i:.4e}" for j in p["intra"] for i in j]) + "\n")
-        f.write(" ".join([f"{i:.4e}" for j in p["ann"] for i in j]) + "\n")
-        f.write(" ".join([f"{i:4d}" for j in p["ann_remainder"] for i in j]) + "\n")
-        f.write(" ".join([f"{i:.4e}" for i in p["xsec"]]) + "\n")
-        f.write(" ".join([str(e) for e in p["emissive"]]) + "\n")
-
-    sf = os.path.join(outdir, "simulation_params")
-    with open(sf, 'w') as f:
-        f.write(f"{sj['fwhm']}\n")
-        f.write(f"{sj['fluence']}\n")
-        f.write(f"{sj['n_sites']}\n")
-        f.write(f"{sj['lattice']}\n")
-        f.write(f"{sj['rep_rate']}\n")
-        f.write(f"{sj['burn_reps']}\n")
-        f.write(f"{sj['tmax']}\n")
-        f.write(f"{sj['dt1']}\n")
-        f.write(f"{sj['dt2']}\n")
-        f.write(f"{sj['binwidth']}\n")
-        f.write(f"{sj['n_counts']}\n")
-        f.write(f"{sj['n_repeats']}\n")
-        f.write(f"{outdir}\n")
-        f.write(f"{sj['debug']}\n")
-    return pf, sf
+import parse
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -59,7 +20,7 @@ if __name__ == "__main__":
             default='simulation.json',
             help=r'File to load protein data from in JSON format')
     # optional arguments
-    parser.add_argument('-p', '--protein', type=str, default=None,
+    parser.add_argument('-p', '--protein_name', type=str, default=None,
             help=r'Name of protein within protein file, if there are multiple')
     parser.add_argument('-o', '--outdir', type=str, default='out',
             help="Output directory (default: 'out')")
@@ -76,67 +37,44 @@ if __name__ == "__main__":
     with open(args.simulation_file, "r") as f:
         simulation_json = json.load(f)
 
-    if args.protein is not None:
-        if args.protein in protein_json:
-            protein = protein_json[args.protein]
+    if args.protein_name is not None:
+        protein_name = args.protein_name
+        if args.protein_name in protein_json:
+            protein = protein_json[args.protein_name]
         else:
-            raise KeyError("Invalid protein choice. Add it to {args.protein_file} or choose a different file.")
+            raise KeyError("Invalid protein choice. "
+            f"Add it to {args.protein_file} or choose a different file.")
     else:
         # if there's only one protein in this file use that and warn
         if len(protein_json) == 1:
             k = list(protein_json.keys())[0]
-            print(f"No protein name given; using protein name {k}.")
             protein = protein_json[k]
+            print(f"Warning: no protein name given; using protein name {k}.")
+            print(f"Protein parameters: {protein}")
         else:
             # try using the filename as a key
             k = os.path.splitext(os.path.basename(args.protein_file))[0]
             if k in protein_json:
                 protein = protein_json[k]
                 print(f"Warning: no protein name given; using protein data {k}.")
-                print(protein)
+                print(f"Protein parameters: {protein}")
             else:
                 raise KeyError(f"Couldn't find a valid set of protein data. Check options -pf and -p.")
+        protein_name = k
 
-    if args.connected:
-        connected_str = "connected"
-    else:
-        connected_str = "unconnected"
-        for i, h in enumerate(protein['hop']):
-            if h > 0.0:
-                print("Connected is set to False, but there are nonzero hopping rates.")
-                print("Zeroing them out.")
-            protein['hop'][i] = 0.0
-    abundance_str = ""
-    for i, ab in enumerate(protein['abundance']):
-        if ab < 1.0:
-            abundance_str += f"{protein['state_names'][i]}_{ab:4.2f}"
-    fstr = np.format_float_scientific(simulation_json['fluence'])
-    rstr = np.format_float_scientific(simulation_json['rep_rate'])
-    outdir = os.path.join(args.outdir,
-            f"{args.protein}", connected_str,
-            f"fluence_{fstr}", f"rep_rate_{rstr}")
-    # add abundance information if it's there
-    if len(abundance_str) > 1:
-        outdir = os.path.join(outdir, abundance_str)
-    # fortran will not know about OS directory separators, so
-    # just add an extra one at the end of the path for it
-    outdir = os.path.join(outdir, "")
-    os.makedirs(outdir, exist_ok=True)
-    print(f"Output directory: {outdir}")
+    outdir = parse.generate_output_dirs(protein_json, simulation_json,
+             protein_name, args.connected, args.outdir)
 
-    # setup the files
     print("Setting up the input files for the fortran...")
-    protein_file, simulation_file = write_fortran_inputs(protein_json,
-            simulation_json, args.protein, outdir)
+    protein_file, simulation_file = parse.write_fortran_inputs(protein_json,
+            simulation_json, protein_name, outdir)
 
-
-    # check the fortran is compiled and up to date
     print("Running make on the fortran...")
     subprocess.run(['make', 'all'], check=True)
 
     if args.n_procs == 0:
         n_procs = os.cpu_count()
-        print(f"Number of MPI processes not given. Using {n_procs}")
+        print(f"Number of MPI processes not given. Using n = {n_procs}")
     else:
         n_procs = args.n_procs
 
