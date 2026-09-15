@@ -1,6 +1,5 @@
 # callum - 14/09/26
 # -*- coding: utf-8 -*-
-
 import os
 import json
 import numpy as np
@@ -72,21 +71,20 @@ def check(data, key, ptype=None, lb=None, ub=None,
     return True or False;
     if False also return a message indicating what went wrong.
     '''
-    valid = True
     msgs = []
     arr = np.array(data[key]).astype(ptype)
     if any([isinstance(ptype, type(item)) for item in arr.flatten()]):
-        valid = False
         msgs.append(f"Non-{ptype} value given in {key}: "
         f"{data[key]} has type {type(arr.flatten()[0])}")
+        return False, msgs
     if lb is not None:
         if np.any(arr < lb):
-            valid = False
             msgs.append(f"{key} = {data[key]} has values < {lb}.")
+            return False, msgs
     if ub is not None:
         if np.any(arr > ub):
-            valid = False
             msgs.append(f"{key} = {data[key]} has values > {ub}.")
+            return False, msgs
     if size is not None:
         st = size if type(size) is list else [size]
         shape = tuple([data[dim] for dim in st])
@@ -94,15 +92,16 @@ def check(data, key, ptype=None, lb=None, ub=None,
             valid = False
             msgs.append(f"{key} = {data[key]} has invalid "
             f"shape {shape}, {arr.shape}.")
+            return False, msgs
     if choices is not None: # only for lattice atm so we can just check one
         if data[key] not in choices:
-            valid = False
             msgs.append(f"{key} = {data[key]} has items not in {choices}")
+            return False, msgs
     if symmetry:
         if not np.allclose(arr, arr.T):
-            valid = False
             msgs.append(f"{key} = {data[key]} should be symmetric.")
-    return valid, msgs
+            return False, msgs
+    return True, msgs
 
 def parse(data, spec, keys=None, necessary_keys=None):
     '''
@@ -114,7 +113,6 @@ def parse(data, spec, keys=None, necessary_keys=None):
     if a list of keys is given, check only those keys (this allows us
     to use the same function for each wizard page); otherwise check them all.
     '''
-    validated = True
     msgs = []
     allowed_keys = spec.keys()
     if keys is None:
@@ -122,7 +120,6 @@ def parse(data, spec, keys=None, necessary_keys=None):
         # in which case, all keys should be present
         keys = data.keys()
         if allowed_keys != keys:
-            validated = False
             # check which keys must be changed in data for them to match
             ktr = list(keys - allowed_keys)
             kta = list(allowed_keys - keys)
@@ -132,7 +129,7 @@ def parse(data, spec, keys=None, necessary_keys=None):
             if len(kta) > 0:
                 msg.append(f"Add keys {kta} to data.")
             msgs.append((' ').join(msg))
-            return validated, msgs
+            return False, msgs
     '''
     keys should now be either the list passed to the function, or
     the set of all allowed keys (if not, the function will have returned).
@@ -142,27 +139,24 @@ def parse(data, spec, keys=None, necessary_keys=None):
     if necessary_keys is not None:
         for key in necessary_keys:
             if key not in data.keys():
-                validated = False
                 msgs.append(f"Key '{key}' is missing from data.")
-                return validated, msgs
+                return False, msgs
 
     # the list of keys passed should be a subset of the allowed keys
     if not set(keys) <= allowed_keys:
-        validated = False
         msgs.append("List of keys passed to parse.parse() is "
                 "not a subset of the allowed keys. Invalid keys: "
                 f"{keys - allowed_keys}.")
-        return validated, msgs
+        return False, msgs
 
     # now more detailed conditions for each key
     for key in keys:
         reqs = spec[key]
         valid, curr_msgs = check(data, key, **reqs)
         if not valid:
-            validated = False
-        # if validated is True and curr_msgs is [], this is a no-op
-        msgs.extend(curr_msgs)
-    return validated, msgs
+            msgs.extend(curr_msgs)
+            return False, msgs
+    return True, msgs
 
 def parse_protein(data, keys=None):
     '''
@@ -207,6 +201,7 @@ def generate_output_dirs(pj, sj, pname, connected, base_outdir="out"):
     if pname not in pj.keys():
         raise KeyError("generate_output_dirs: {pname} not in pdata {pdata}")
     p = pj[pname]
+    print(f"gen out dirs: connected = {connected}")
     if connected:
         connected_str = "connected"
     else:
