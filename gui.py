@@ -140,9 +140,6 @@ Will be used to generate output directory structure.''')
 
     def validatePage(self):
         self.updateData()
-        print(f"LE: data = {self.data}, "
-        f"parent data = {self.parent.protein_data}, "
-        f"{self.data == self.parent.protein_data}")
         return True
 
 class nameNumber(QWizardPage):
@@ -173,8 +170,6 @@ class nameNumber(QWizardPage):
     def initializePage(self):
         self.data = self.parent.protein_data
         self.protein_name.setText(self.parent.protein_name)
-        print(f"NN initialise: {self.data}")
-        print(f"NN initialise: {self.parent.protein_data}")
         if 'n_p' in self.data.keys():
             self.n_p.setValue(self.data['n_p'])
             self.n_s.setRange(self.n_p.value(), 20)
@@ -325,8 +320,6 @@ class namePigmentsStates(QWizardPage):
         dict for my benefit, then carry on if all is well
         '''
         self.updateData()
-        print(f"NPS: data = {self.parent.protein_data}, "
-        f"{self.data == self.parent.protein_data}")
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
@@ -477,8 +470,6 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         
     def validatePage(self):
         self.updateData()
-        print(f"SP: data = {self.parent.protein_data}, "
-        f"{self.data == self.parent.protein_data}")
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
@@ -610,8 +601,6 @@ class matrixTables(QWizardPage):
     def validatePage(self):
         self.updateData()
         valid, msgs = self.checkData()
-        print(f"MT: data = {self.parent.protein_data}, "
-        f"{self.data == self.parent.protein_data}")
         if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
@@ -781,8 +770,6 @@ class loadSimulation(QWizardPage):
 
     def validatePage(self):
         self.updateData()
-        print(f"LS: data = {self.parent.sim_data}, "
-        f"{self.data == self.parent.sim_data}")
         return True
 
 class simulationParameters(QWizardPage):
@@ -960,8 +947,6 @@ the fortran code in some way.''')
 
     def validatePage(self):
         self.updateData()
-        print(f"SP: data = {self.parent.sim_data}")
-        valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
