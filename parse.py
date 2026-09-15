@@ -25,13 +25,14 @@ protein_spec = {
     "pigment_names": {'ptype': str,   'size': 'n_p'},
     "state_names":   {'ptype': str,   'size': 'n_s'},
     "which_pigment": {'ptype': int,   'lb': 1, 'size': 'n_s'},
+    "hop":           {'ptype': float, 'lb': 0.0, 'size': 'n_s'},
+    "decay":         {'ptype': float, 'lb': 0.0, 'size': 'n_s'},
     "xsec":          {'ptype': float, 'lb': 0.0, 'size': 'n_s'},
     "emissive":      {'ptype': bool,  'size': 'n_s'},
     "abundance":     {'ptype': float, 'lb': 0.0, 'ub': 1.0, 'size': 'n_s'},
     "dist":          {'ptype': bool,  'size': ['n_s', 'n_s']},
     "n_tot":         {'ptype': int,   'size': 'n_p'},
     "n_thermal":     {'ptype': int,   'size': 'n_p'},
-    "hop":           {'ptype': float, 'lb': 0.0, 'size': 'n_s'},
     "intra":         {'ptype': float, 'lb': 0.0, 'size': ['n_s', 'n_s']},
     "ann":           {'ptype': float, 'lb': 0.0, 'size': ['n_s', 'n_s'],
         'symmetry': True},
@@ -77,6 +78,10 @@ def check(data, key, ptype=None, lb=None, ub=None,
         msgs.append(f"Non-{ptype} value given in {key}: "
         f"{data[key]} has type {type(arr.flatten()[0])}")
         return False, msgs
+    if ptype is str:
+        if any([item == "" for item in arr.flatten()]):
+            msgs.append(f"Zero-length string found for {key} = {data[key]}.")
+            return False, msgs
     if lb is not None:
         if np.any(arr < lb):
             msgs.append(f"{key} = {data[key]} has values < {lb}.")
@@ -198,10 +203,12 @@ def generate_output_dirs(pj, sj, pname, connected, base_outdir="out"):
 
     Return the output directory if successful, None otherwise.
     '''
-    if pname not in pj.keys():
-        raise KeyError("generate_output_dirs: {pname} not in pdata {pdata}")
-    p = pj[pname]
-    print(f"gen out dirs: connected = {connected}")
+    p = pj[pname] if pname in pj.keys() else pj
+    valid, msgs = parse_protein(p)
+    if not valid:
+        print(msgs)
+        return None
+
     if connected:
         connected_str = "connected"
     else:

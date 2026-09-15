@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 import json
 from PyQt6.QtWidgets import *
 from typing import Any
+import parse
 
 '''
 
@@ -51,26 +52,15 @@ TODO:
       to standardise, I've been trying to test as i go
 '''
 
-def parse_protein_data(data, fields=None):
-    '''
-    check an dictionary `data` and make sure that:
-    - it does not contain any keys that shouldn't be there
-    - all the keys that are there have corresponding values that
-      are valid wrt the rest of the code.
-    if a list of keys is given, check only those keys (this allows us
-    to use the same function for each wizard page); otherwise check it all.
-    '''
-    return True
-
 class loadExisting(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
         self.setTitle("Load existing protein data.")
-        self.setSubTitle('''
-If you'd like to import existing protein data, you can do that here.
-Otherwise, click Next to start specifying the parameters of your protein.
-                         ''')
+        self.setSubTitle("If you'd like to import existing protein data, "
+                "you can do that here. Otherwise, click Next to start "
+                "specifying the parameters of your protein.")
+        self.data = self.parent.protein_data
 
     def initializePage(self):
         layout = QVBoxLayout()
@@ -105,10 +95,10 @@ Will be used to generate output directory structure.''')
         if os.path.isfile(self.filename.text()):
             with open(self.filename.text()) as f:
                 try:
-                    self.data = json.load(f)
+                    self.all_json_data = json.load(f)
                     success = True
                 except:
-                    self.data = {}
+                    self.all_json_data = {}
                     box = QMessageBox.critical(self,
                     "whoopsy daisy", "Failed to load protein data from JSON.")
                     success = False
@@ -127,7 +117,7 @@ Will be used to generate output directory structure.''')
     def onLoadButton(self):
         self.load_success = self.load_from_file()
         if self.load_success:
-            protein_names = self.data.keys()
+            protein_names = self.all_json_data.keys()
             for name in protein_names:
                 self.proteinChooser.addItem(name)
 
@@ -135,25 +125,33 @@ Will be used to generate output directory structure.''')
         self.load_success = False
         self.filename.setText("")
         self.proteinChooser.clear()
-        self.data = {}
-        self.parent.data = {}
+        self.all_json_data = {}
+        self.parent.protein_data = {}
 
     def updateData(self):
         if self.load_success:
             name = self.proteinChooser.currentText()
-            self.parent.data = self.data[name]
-            self.parent.data['name'] = name
-            self.parent.data['filename'] = self.filename.text()
+            self.data = self.all_json_data[name]
+            self.parent.protein_data = self.data
+            self.parent.protein_name = name
+            self.parent.protein_file = self.filename.text()
         else:
-            self.parent.data = {}
+            self.data = {}
 
     def validatePage(self):
         self.updateData()
+        print(f"LE: data = {self.data}, "
+        f"parent data = {self.parent.protein_data}, "
+        f"{self.data == self.parent.protein_data}")
         return True
 
 class nameNumber(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
+        self.setTitle("Name and basic protein properties")
+        self.setSubTitle("Enter the name of the protein "
+                "if not yet given, the number of different pigments, "
+                "and the number of states in total across them.")
         self.parent = parent
         layout = QVBoxLayout()
         gl = QGridLayout()
@@ -173,27 +171,26 @@ class nameNumber(QWizardPage):
         self.setLayout(layout)
 
     def initializePage(self):
-        if 'name' in self.parent.data.keys():
-            self.protein_name.setText(self.parent.data['name'])
-        else:
-            self.protein_name.setText("")
-        if 'n_p' in self.parent.data.keys():
-            self.n_p.setValue(self.parent.data['n_p'])
-        else:
-            self.n_p.setValue(0)
-        if 'n_s' in self.parent.data.keys():
-            self.n_s.setValue(self.parent.data['n_s'])
-        else:
-            self.n_s.setValue(0)
-        self.n_s.setRange(self.n_p.value(), 20)
+        self.data = self.parent.protein_data
+        self.protein_name.setText(self.parent.protein_name)
+        print(f"NN initialise: {self.data}")
+        print(f"NN initialise: {self.parent.protein_data}")
+        if 'n_p' in self.data.keys():
+            self.n_p.setValue(self.data['n_p'])
+            self.n_s.setRange(self.n_p.value(), 20)
+        if 'n_s' in self.data.keys():
+            self.n_s.setValue(self.data['n_s'])
 
     def cleanupPage(self):
         self.protein_name.setText("")
         self.n_p.setValue(0)
+        self.n_s.setRange(0, 20)
         self.n_s.setValue(0)
-        if getattr(self, "fields", False):
-            for field in self.fields:
-                del self.parent.data[field]
+        for key in self.updated_keys:
+            if key in self.data:
+                del self.data[key]
+        self.parent.protein_data = self.data
+        self.updated_keys = []
 
     def updateData(self):
         '''
@@ -202,44 +199,36 @@ class nameNumber(QWizardPage):
         the names of the fields so that they can be cleaned
         up by cleanupPage()
         '''
-        self.parent.data["name"] = self.field('protein_name')
-        self.parent.data["n_p"]  = self.field('n_p')
-        self.parent.data["n_s"]  = self.field('n_s')
-        self.fields = ["name", "n_p", "n_s"]
+        self.parent.protein_name = self.field('protein_name')
+        self.data["n_p"]  = self.field('n_p')
+        self.data["n_s"]  = self.field('n_s')
+        self.parent.protein_data = self.data
+        self.updated_keys = ["n_p", "n_s"]
 
     def checkData(self):
-        '''
-        check the entered data to make sure it's all tickety boo
-        '''
-        validated = True
-        msgs = []
-        if len(self.parent.data["name"]) == 0:
-            msgs.append("Length of protein name must be > 0.")
-            validated = False
-        if self.parent.data["n_p"] <= 0:
-            msgs.append("Number of pigments must be > 0.")
-            validated = False
-        if self.parent.data["n_s"] <= 0:
-            msgs.append("Number of states must be > 0.")
-            validated = False
-        return validated, msgs
+        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
 
     def validatePage(self):
-        '''
-        update the parent's data, check it, print the current
-        dict for my benefit, then carry on if all is well
-        '''
         self.updateData()
-        validated, msgs = self.checkData()
-        if not validated:
+        if self.parent.protein_name == "":
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", "Protein name cannot be blank.")
+            return False
+        valid, msgs = self.checkData()
+        if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        return validated
+        return valid
 
 class namePigmentsStates(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
+        self.setTitle("Names of pigments and states")
+        self.setSubTitle("The fortran will use these names in the "
+                "histogram that it outputs, so you can tell which "
+                "events are which.")
         self.parent = parent
+        self.updated_keys = []
         self.layout = QVBoxLayout()
         self.pl = QGridLayout()
         self.sl = QGridLayout()
@@ -250,6 +239,7 @@ class namePigmentsStates(QWizardPage):
         self.setLayout(self.layout)
 
     def initializePage(self):
+        self.data = self.parent.protein_data
         self.n_p = self.field('n_p')
         self.n_s = self.field('n_s')
         self.pigment_names = []
@@ -280,8 +270,8 @@ class namePigmentsStates(QWizardPage):
         keys = ["pigment_names", "state_names"]
         boxlists = [self.pigment_names, self.state_names]
         for k, b in zip(keys, boxlists):
-            if k in self.parent.data:
-                names = self.parent.data[k]
+            if k in self.data:
+                names = self.data[k]
             else:
                 names = ["" for _ in range(self.n_p)]
             for i, n in enumerate(names):
@@ -289,8 +279,8 @@ class namePigmentsStates(QWizardPage):
         keys = ["n_tot", "n_thermal"]
         boxlists = [self.n_tot, self.n_thermal]
         for k, b in zip(keys, boxlists):
-            if k in self.parent.data:
-                vals = self.parent.data[k]
+            if k in self.data:
+                vals = self.data[k]
             else:
                 vals = [0 for _ in range(self.n_p)]
             for i, n in enumerate(vals):
@@ -312,48 +302,22 @@ class namePigmentsStates(QWizardPage):
                 child = layout.takeAt(0)
                 if child.widget:
                     child.widget().deleteLater()
-        if getattr(self, "fields", False):
-            for field in self.fields:
-                del self.parent.data[field]
+        for key in self.updated_keys:
+            if key in self.data:
+                del self.data[key]
+        self.parent.protein_data = self.data
+        self.updated_keys = []
 
     def updateData(self):
-        self.parent.data["pigment_names"] = [p.text()
-                                        for p in self.pigment_names]
-        self.parent.data["state_names"]   = [s.text()
-                                        for s in self.state_names]
-        self.parent.data["n_tot"] = [int(p.value()) for p in self.n_tot]
-        self.parent.data["n_thermal"] = [int(p.value())
-                                         for p in self.n_thermal]
-        self.fields = ["pigment_names", "state_names", "n_tot", "n_thermal"]
+        self.data["pigment_names"] = [p.text() for p in self.pigment_names]
+        self.data["state_names"]   = [s.text() for s in self.state_names]
+        self.data["n_tot"]         = [int(p.value()) for p in self.n_tot]
+        self.data["n_thermal"]     = [int(p.value()) for p in self.n_thermal]
+        self.parent.protein_data = self.data
+        self.updated_keys = ["pigment_names", "state_names", "n_tot", "n_thermal"]
 
     def checkData(self):
-        '''
-        check the entered data to make sure it's all tickety boo
-        '''
-        validated = True
-        msgs = []
-        data = self.parent.data
-
-        for name_string, n_string in zip(
-            ['pigment_names', 'state_names'], ['n_p', 'n_s']):
-            nsmsg = name_string.replace("_", " ")
-            if any([len(p) == 0 for p in data[name_string]]):
-                msgs.append(f"Length of {nsmsg} must be > 0.")
-                validated = False
-            if len(data[name_string]) != data[n_string]:
-                msgs.append(f"Number of {nsmsg} doesn't match {n_string}.")
-                validated = False
-        for i in range(data['n_p']):
-            if self.n_tot[i].value() <= 0:
-                msgs.append(f"Number of pigments for pigment {i} must be > 0.")
-                validated = False
-            if self.n_thermal[i].value() <= 0:
-                msgs.append(f"Number of thermally accessible pigments for pigment {i} must be > 0.")
-                validated = False
-            if self.n_tot[i].value() < self.n_thermal[i].value():
-                msgs.append(f"Number of thermally accessible states for pigment {i} is larger than total.")
-                validated = False
-        return validated, msgs
+        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
 
     def validatePage(self):
         '''
@@ -361,16 +325,22 @@ class namePigmentsStates(QWizardPage):
         dict for my benefit, then carry on if all is well
         '''
         self.updateData()
-        validated, msgs = self.checkData()
-        if not validated:
+        print(f"NPS: data = {self.parent.protein_data}, "
+        f"{self.data == self.parent.protein_data}")
+        valid, msgs = self.checkData()
+        if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        return validated
+        return valid
 
-class pigmentProperties(QWizardPage):
+class stateProperties(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
+        self.setTitle("State properties.")
+        self.setSubTitle("Per-state properties like decay time, "
+        "cross-section, etc.")
         self.parent = parent
+        self.updated_keys = []
         self.layout = QVBoxLayout()
         self.pl = QGridLayout()
         self.layout.addLayout(self.pl)
@@ -397,6 +367,7 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.pl.addWidget(self.abundanceLabel, 0, 6)
 
     def initializePage(self):
+        self.data = self.parent.protein_data
         self.n_s = self.field("n_s")
         self.hop       = []
         self.decay     = []
@@ -406,7 +377,7 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.abundance = []
         for i in range(self.n_s):
             row = i + 1
-            state_name = self.parent.data["state_names"][i]
+            state_name = self.data["state_names"][i]
             self.hop.append(QLineEdit("0.0"))
             self.decay.append(QLineEdit("0.0"))
             self.xsec.append(QLineEdit("0.0"))
@@ -422,7 +393,7 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
             self.pl.setAlignment(self.emissive[i],
                                  Qt.AlignmentFlag.AlignHCenter)
             for j in range(self.field("n_p")):
-                name = self.parent.data["pigment_names"][j]
+                name = self.data["pigment_names"][j]
                 self.which_p[i].addItem(name)
             self.pl.addWidget(self.which_p[i], row, 5)
             self.pl.addWidget(self.abundance[i], row, 6)
@@ -432,8 +403,8 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         keys = ["hop", "xsec", "abundance"]
         boxlists = [self.hop, self.xsec, self.abundance]
         for k, b in zip(keys, boxlists):
-            if k in self.parent.data:
-                names = self.parent.data[k]
+            if k in self.data:
+                names = self.data[k]
             else:
                 if k == 'abundance':
                     names = [1.0 for _ in range(self.n_s)]
@@ -441,15 +412,15 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
                     names = [0.0 for _ in range(self.n_s)]
             for i, n in enumerate(names):
                 b[i].setText(str(n))
-        if "intra" in self.parent.data:
+        if "intra" in self.data:
             for i in range(self.n_s):
-                self.decay[i].setText(str(self.parent.data["intra"][i][i]))
-        if "emissive" in self.parent.data:
-            ea = self.parent.data["emissive"]
+                self.decay[i].setText(str(self.data["intra"][i][i]))
+        if "emissive" in self.data:
+            ea = self.data["emissive"]
         else:
             ea = [False for _ in range(self.n_s)]
-        if "which_pigment" in self.parent.data:
-            which = self.parent.data["which_pigment"]
+        if "which_pigment" in self.data:
+            which = self.data["which_pigment"]
         else:
             # python's 0-based and fortran is 1-based
             # so the conversion has to be done somewhere; i do it
@@ -472,217 +443,179 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.abundance = []
         self.n_s = 0
         self.n_p = 0
-        if getattr(self, "fields", False):
-            for field in self.fields:
-                del self.parent.data[field]
+        for key in self.updated_keys:
+            del self.data[key]
+        self.parent.protein_data = self.data
+        self.updated_keys = []
 
     def updateData(self):
-        self.parent.data["hop"] = [float(p.text())
+        self.data["hop"] = [float(p.text())
                             if p.text() != '' else 0.0 for p in self.hop]
-        self.parent.data["decay"] = [float(p.text())
+        self.data["decay"] = [float(p.text())
                             if p.text() != '' else 0.0 for p in self.decay]
-        self.parent.data["xsec"]  = [float(p.text())
+        self.data["xsec"]  = [float(p.text())
                             if p.text() != '' else 0.0 for p in self.xsec]
-        self.parent.data["emissive"] = [p.isChecked() for p in self.emissive]
-        self.parent.data["which_pigment"] = [p.currentIndex() + 1
+        self.data["emissive"] = [p.isChecked() for p in self.emissive]
+        self.data["which_pigment"] = [p.currentIndex() + 1
                                       for p in self.which_p]
         dist = []
-        which = self.parent.data["which_pigment"]
-        for i in range(self.parent.data['n_s']):
+        which = self.data["which_pigment"]
+        for i in range(self.data['n_s']):
             row = []
-            for j in range(self.parent.data['n_s']):
+            for j in range(self.data['n_s']):
                row.append(False if which[i] == which[j] else True) 
             dist.append(row)
-        self.parent.data["dist"] = dist
-        self.parent.data["abundance"]  = [float(p.text())
+        self.data["dist"] = dist
+        self.data["abundance"]  = [float(p.text())
                         if p.text() != '' else 0.0 for p in self.abundance]
-        self.fields = ["hop", "decay", "xsec", "emissive",
+        self.parent.protein_data = self.data
+        self.updated_keys = ["hop", "decay", "xsec", "emissive",
                        "which_pigment", "abundance"]
 
     def checkData(self):
-        '''
-        check the entered data to make sure it's all tickety boo
-        '''
-        validated = True
-        msgs = []
-        data = self.parent.data
-        if not(any(data["emissive"])):
-            msgs.append("At least one decay should be emissive!")
-            validated = False
-        if all([d == 0.0 for d in data['xsec']]):
-            msgs.append("At least one state should have a non-zero cross section.")
-            validated = False
-        if all([d == 0.0 for d in data['abundance']]):
-            msgs.append("At least one state should have a non-zero abundance.")
-            validated = False
-        return validated, msgs
+        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
         
     def validatePage(self):
-        '''
-        update the parent's data, check it, print the current
-        dict for my benefit, then carry on if all is well
-        '''
         self.updateData()
-        validated, msgs = self.checkData()
-        if not validated:
+        print(f"SP: data = {self.parent.protein_data}, "
+        f"{self.data == self.parent.protein_data}")
+        valid, msgs = self.checkData()
+        if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        return validated
-
-class MatrixTable(QTableWidget):
-    def __init__(self, data, key, symmetric=False, block_diagonal=False):
-        QTableWidget.__init__(self)
-        self.state_names = data["state_names"]
-        self.n_states = len(self.state_names)
-        self.data = data
-        self.setRowCount(self.n_states)
-        self.setColumnCount(self.n_states)
-        self.setHorizontalHeaderLabels(self.state_names)
-        self.setVerticalHeaderLabels(self.state_names)
-        for i in range(self.n_states):
-            for j in range(self.n_states):
-                item = QTableWidgetItem()
-                if key in self.data:
-                    item.setText(str(self.data[key][i][j]))
-                self.setItem(i, j, item)
-        if symmetric:
-            for i in range(self.n_states):
-                for j in range(self.n_states):
-                    if i > j:
-                        item = QtWidgets.QTableWidgetItem()
-                        item.setBackground(QtGui.QColor("darkGray"))
-                        item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
-                        self.setItem(i, j, item)
-        if block_diagonal:
-            for i in range(self.n_states):
-                item = QtWidgets.QTableWidgetItem()
-                item.setBackground(QtGui.QColor("darkGray"))
-                item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
-                self.setItem(i, i, item)
-
-class RemainderTable(QGridLayout):
-    def __init__(self, data):
-        QGridLayout.__init__(self)
-        self.state_names = data["state_names"]
-        self.n_states = len(self.state_names)
-        self.data = data
-        for i in range(self.n_states):
-            self.addWidget(QLabel(self.state_names[i]), 0, i + 1)
-            self.addWidget(QLabel(self.state_names[i]), i + 1, 0)
-            for j in range(self.n_states):
-                current = QtWidgets.QComboBox()
-                current.addItem("None")
-                for k in range(self.n_states):
-                    current.addItem(self.state_names[k])
-                self.addWidget(current, i + 1, j + 1)
-                if "ann_remainder" in data:
-                    # 0 is the None index is the item list
-                    # so we don't need to mess about here
-                    ci = self.data["ann_remainder"][i][j]
-                    current.setCurrentIndex(ci)
-
-    def cleanup(self):
-        while self.count():
-            child = self.takeAt(0)
-            if child.widget:
-                child.widget().deleteLater()
+        return valid
 
 class matrixTables(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
+        self.setTitle("Intra-state rates")
+        self.setSubTitle("Details of transfer and annihilation rates.")
         self.parent = parent
-        self.layout = QVBoxLayout()
-
-    def initializePage(self):
-        self.intra = MatrixTable(self.parent.data, "intra", block_diagonal=True)
-        self.ann   = MatrixTable(self.parent.data, "ann", symmetric=True)
-        self.ann_rem_layout = RemainderTable(self.parent.data)
+        self.updated_keys = []
+        self.layout = QGridLayout()
         self.intra_label = QLabel("Transfer times between states (s)")
-        self.layout.addWidget(self.intra_label)
-        self.layout.addWidget(self.intra)
         self.ann_label = QLabel("Annihilation times between states (s)")
-        self.layout.addWidget(self.ann_label)
-        self.layout.addWidget(self.ann)
         self.ann_rem_label = QLabel("Remaining state after annihilation event")
-        self.layout.addWidget(self.ann_rem_label)
-        self.layout.addLayout(self.ann_rem_layout)
+        self.layout.addWidget(self.intra_label, 0, 0)
+        self.layout.addWidget(self.ann_label, 1, 0)
+        self.layout.addWidget(self.ann_rem_label, 2, 0)
+        self.intra = QTableWidget()
+        self.ann = QTableWidget()
+        self.ann_rem = QGridLayout()
+        self.layout.addWidget(self.intra, 0, 1)
+        self.layout.addWidget(self.ann, 1, 1)
+        self.layout.addLayout(self.ann_rem, 2, 1)
         self.setLayout(self.layout)
 
+    def initializePage(self):
+        self.data = self.parent.protein_data
+        state_names = self.data["state_names"]
+        n_s = self.data["n_s"]
+        for widget, key in zip([self.intra, self.ann], ["intra", "ann"]):
+            widget.setRowCount(n_s)
+            widget.setColumnCount(n_s)
+            widget.setHorizontalHeaderLabels(state_names)
+            widget.setVerticalHeaderLabels(state_names)
+            for i in range(n_s):
+                for j in range(n_s):
+                    item = QTableWidgetItem()
+                    if key in self.data:
+                        item.setText(str(self.data[key][i][j]))
+                    widget.setItem(i, j, item)
+            for i in range(n_s):
+                # ann is symmetric - block below the diagonal
+                if key == "ann":
+                    for j in range(n_s):
+                        if i > j:
+                            item = QTableWidgetItem()
+                            item.setBackground(QtGui.QColor("darkGray"))
+                            item.setFlags(Qt.ItemFlag.ItemIsSelectable | 
+                                          Qt.ItemFlag.ItemIsEditable)
+                            widget.setItem(i, j, item)
+                # intra should have diagonal blocked - decays already given
+                if key == "intra":
+                    item = QTableWidgetItem()
+                    item.setBackground(QtGui.QColor("darkGray"))
+                    item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
+                    widget.setItem(i, i, item)
+        # ann_rem
+        for i in range(n_s):
+            self.ann_rem.addWidget(QLabel(state_names[i]), 0, i + 1)
+            self.ann_rem.addWidget(QLabel(state_names[i]), i + 1, 0)
+            for j in range(n_s):
+                current = QComboBox()
+                current.addItem("None")
+                for k in range(n_s):
+                    current.addItem(state_names[k])
+                self.ann_rem.addWidget(current, i + 1, j + 1)
+                if "ann_remainder" in self.data:
+                    # 0 is the None index in the item list
+                    # so we don't need to mess about here
+                    ci = self.data["ann_remainder"][i][j]
+                    current.setCurrentIndex(ci)
+
     def cleanupPage(self):
-        self.ann_rem_layout.cleanup()
-        self.intra  = []
-        self.ann    = []
-        self.intra_label = None
-        self.ann_label = None
-        if getattr(self, "fields", False):
-            for field in self.fields:
-                del self.parent.data[field]
+        self.intra.clear()
+        self.ann.clear()
+        while self.ann_rem.count():
+            child = self.ann_rem.takeAt(0)
+            if child.widget:
+                child.widget().deleteLater()
+        for key in self.updated_keys:
+            if key in self.data:
+                del self.data[key]
+        self.parent.protein_data = self.data
+        self.updated_keys = []
 
     def updateData(self):
-        n_s = self.parent.data["n_s"]
+        n_s = self.data["n_s"]
         intra = np.zeros((n_s, n_s), dtype=float)
         ann = np.zeros_like(intra)
         ann_rem = np.zeros((n_s, n_s), dtype=int)
         for i in range(n_s):
             for j in range(n_s):
                 if i == j:
-                    intra[i, i] = self.parent.data['decay'][i]
+                    intra[i, i] = self.data['decay'][i]
                 else:
                     intra[i, j] = float(self.intra.item(i, j).text())
                 if j >= i:
                     # annihilation matrix must be symmetric
                     ann[i, j] = float(self.ann.item(i, j).text())
                     ann[j, i] = float(self.ann.item(i, j).text())
-                current = self.ann_rem_layout.itemAtPosition(i + 1, j + 1)
+                current = self.ann_rem.itemAtPosition(i + 1, j + 1)
                 # None is always added as the first (0) index
                 ann_rem[i, j] = current.widget().currentIndex()
-        self.parent.data["intra"] = intra.tolist()
-        self.parent.data["ann"] = ann.tolist()
-        self.parent.data["ann_remainder"] = ann_rem.tolist()
-        self.fields = ["intra", "ann", "ann_remainder"]
+        self.data["intra"] = intra.tolist()
+        self.data["ann"] = ann.tolist()
+        self.data["ann_remainder"] = ann_rem.tolist()
+        self.parent.protein_data = self.data
+        self.updated_keys = ["intra", "ann", "ann_remainder"]
 
     def checkData(self):
         '''
-        check the entered data to make sure it's all tickety boo
+        special extra check here that the remainders and rates match
+        (there are no nonzero rates set with zero remainder or vice-versa)
         '''
-        validated = True
         msgs = []
-        data = self.parent.data
-        intra = data["intra"]
-        ann = data["ann"]
-        ann_rem = data["ann_remainder"]
-        for i in range(data["n_s"]):
-            for j in range(data["n_s"]):
-                s1 = data["state_names"][i]
-                s2 = data["state_names"][j]
-                if intra[i][j] < 0.0:
-                    msgs.append(f"Transfer times from {s1} to {s2} cannot be < 0.")
-                    validated = False
-                if ann[i][j] < 0.0:
-                    msgs.append(f"Annihilation time for {s1} and {s2} cannot be < 0.")
-                    validated = False
-                if ann[i][j] != ann[j][i]:
-                    msgs.append("Annihilation matrix is not symmetric.")
-                    validated = False
-                if ann_rem[i][j] < 0:
-                    msgs.append(f"Annihilation remainder for {s1} and {s2} invalid.")
-                    validated = False
+        ann = self.data["ann"]
+        ann_rem = self.data["ann_remainder"]
+        for i in range(self.data["n_s"]):
+            for j in range(self.data["n_s"]):
                 if ann[i][j] == 0.0 and ann_rem[i][j] > 0:
-                    msgs.append(f"States {s1} and {s2} have an annihilation remainder set but a zero annihilation rate.")
-                    validated = False
-        return validated, msgs
+                    msgs.append(f"States {s1} and {s2} have an annihilation "
+                    "remainder set but a zero annihilation rate.")
+                    return False, msgs
+        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
 
     def validatePage(self):
-        '''
-        update the parent's data, check it, print the current
-        dict for my benefit, then carry on if all is well
-        '''
         self.updateData()
-        validated, msgs = self.checkData()
-        if not validated:
+        valid, msgs = self.checkData()
+        print(f"MT: data = {self.parent.protein_data}, "
+        f"{self.data == self.parent.protein_data}")
+        if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        return validated
+        return valid
 
 class saveProteinPage(QWizardPage):
     def __init__(self, parent):
@@ -692,12 +625,12 @@ class saveProteinPage(QWizardPage):
         self.setSubTitle("Save protein data to file.")
 
     def initializePage(self):
+        self.data = self.parent.protein_data
         layout = QVBoxLayout()
         gl = QGridLayout()
-        if 'filename' in self.parent.data:
-            self.filename = QLineEdit(self.parent.data['filename'])
-        else:
-            self.filename = QLineEdit(os.getcwd())
+        pf = self.parent.protein_file
+        fstr = os.getcwd() if pf == "" else pf
+        self.filename = QLineEdit(fstr)
         self.save_success = False
         self.load_success = False
         self.existing_data = {}
@@ -715,14 +648,8 @@ class saveProteinPage(QWizardPage):
         self.setLayout(layout)
 
     def save_to_file(self):
-        dd = self.parent.data
-        name = dd.pop('name')
-        final_data = {name: dd}
-        dd['name'] = name
-        # don't need these in the JSON
-        if 'filename' in final_data:
-            # filename is only a key if a file was loaded at the start
-            del final_data[name]['filename']
+        name = self.parent.protein_name
+        final_data = {name: self.data}
         if 'decay' in final_data:
             # decay won't be there if we've already saved a file
             del final_data[name]['decay']
@@ -741,7 +668,7 @@ class saveProteinPage(QWizardPage):
                     self.load_success = False
         # if the protein name matches one that's already there and we just
         # merge the dicts, the original will be overwritten, so check
-        if self.parent.data["name"] in self.existing_data.keys():
+        if self.parent.protein_name in self.existing_data.keys():
             overwrite = True
             self.overwriteCheck = QMessageBox.question(self,
                 "", "Protein name already exists in data file. Overwrite?")
@@ -761,7 +688,6 @@ class saveProteinPage(QWizardPage):
         if success:
             # these will be needed on runPage later on
             self.parent.protein_file = self.filename.text()
-            self.parent.protein = name
         return success
 
     def onBrowseButton(self):
@@ -773,15 +699,27 @@ class saveProteinPage(QWizardPage):
     def onSaveButton(self):
         self.save_success = self.save_to_file()
 
+    def checkData(self):
+        return parse.parse_protein(self.data)
+
     def validatePage(self):
-        return self.save_success
+        if not self.save_success:
+            box = QMessageBox.critical(self,
+            "whoopsy daisy", 
+            "Protein data has not been saved successfully.")
+            return False
+        valid, msgs = self.checkData()
+        if not valid:
+            self.errors = QMessageBox.critical(self,
+            "whoospy daisy", ('\n').join(msgs))
+        return valid
 
 class loadSimulation(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.parent = parent
         self.setTitle("Load existing simulation parameters.")
-        self.sim_data = {}
+        self.data = {}
 
     def initializePage(self):
         layout = QVBoxLayout()
@@ -810,10 +748,9 @@ class loadSimulation(QWizardPage):
         if os.path.isfile(self.filename.text()):
             with open(self.filename.text()) as f:
                 try:
-                    self.sim_data = json.load(f)
+                    self.data = json.load(f)
                     success = True
                 except:
-                    self.sim_data = {}
                     box = QMessageBox.critical(self,
                     "whoospy daisy", "JSON load failed.")
                     success = False
@@ -835,18 +772,17 @@ class loadSimulation(QWizardPage):
     def onResetButton(self):
         self.load_success = False
         self.filename.setText("")
-        self.sim_data = {}
-        self.parent.sim_data = {}
+        self.data = {}
 
     def updateData(self):
         if self.load_success:
-            self.parent.sim_data = self.sim_data
-            self.parent.sim_data['filename'] = self.filename.text()
-        else:
-            self.parent.sim_data = {}
+            self.parent.sim_file = self.filename.text()
+            self.parent.sim_data = self.data
 
     def validatePage(self):
         self.updateData()
+        print(f"LS: data = {self.parent.sim_data}, "
+        f"{self.data == self.parent.sim_data}")
         return True
 
 class simulationParameters(QWizardPage):
@@ -1011,35 +947,25 @@ the fortran code in some way.''')
             self.parent.sim_data[sk] = v
 
     def checkData(self):
-        '''
-        check the entered data to make sure it's all tickety boo
-        '''
-        validated = True
         msgs = []
-        for sk in self.sim_keys:
-            if sk not in ['debug', 'lattice']:
-                if self.parent.sim_data[sk] <= 0.0:
-                    msgs.append(f"{sk} cannot be <= 0.")
-                    validated = False
         if self.parent.sim_data['dt1'] >= self.parent.sim_data['binwidth']:
-            msgs.append("Measurement time step dt1 should be smaller than binwidth.")
-            validated = False
+            msgs.append("Measurement time step dt1 should be smaller "
+            "than binwidth.")
+            return False, msgs
         if self.parent.sim_data['dt1'] > self.parent.sim_data['dt2']:
-            msgs.append("Measurement time step dt1 should be smaller than dark time step dt2.")
-            validated = False
-        return validated, msgs
+            msgs.append("Measurement time step dt1 should be smaller "
+            "than dark time step dt2.")
+            return False, msgs
+        return parse.parse_simulation(self.parent.sim_data)
 
     def validatePage(self):
-        '''
-        update the parent's data, check it, print the current
-        dict for my benefit, then carry on if all is well
-        '''
         self.updateData()
-        validated, msgs = self.checkData()
-        if not validated:
+        print(f"SP: data = {self.parent.sim_data}")
+        valid, msgs = self.checkData()
+        if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
-        return validated
+        return valid
 
 class saveSimPage(QWizardPage):
     def __init__(self, parent):
@@ -1051,10 +977,9 @@ class saveSimPage(QWizardPage):
     def initializePage(self):
         layout = QVBoxLayout()
         gl = QGridLayout()
-        if 'filename' in self.parent.sim_data:
-            self.filename = QLineEdit(self.parent.sim_data['filename'])
-        else:
-            self.filename = QLineEdit(os.getcwd())
+        sf = self.parent.sim_file
+        fstr = os.getcwd() if sf == "" else sf
+        self.filename = QLineEdit(fstr)
         self.save_success = False
         self.load_success = False
         self.existing_data = {}
@@ -1182,10 +1107,10 @@ will by put within a folder named "out" in the current directory.''')
 
     def initializePage(self):
         self.proteinFileBox.setText(self.parent.protein_file)
-        self.proteinChoice.setText(self.parent.protein)
+        self.proteinChoice.setText(self.parent.protein_name)
         self.simulationFileBox.setText(self.parent.sim_file)
         self.nonzero_hop = False
-        for h in self.parent.data['hop']:
+        for h in self.parent.protein_data['hop']:
             if h > 0.0:
                 self.nonzero_hop = True
         self.connectedOption.setChecked(self.nonzero_hop)
@@ -1205,10 +1130,13 @@ will by put within a folder named "out" in the current directory.''')
 
         pf = f"{self.parent.protein_file}"
         sf = f"{self.parent.sim_file}"
-        p = f"{self.parent.protein}"
-        c = f"{self.connectedOption.isChecked()}"
+        p = f"{self.parent.protein_name}"
+        if self.connectedOption.isChecked():
+            c = "--connection"
+        else:
+            c = "--no-connection"
         n = f"{self.coresBox.value()}"
-        args = ["main.py", "-pf", pf, "-sf", sf, "-p", p, "-c", c, "-n", n]
+        args = ["main.py", "-pf", pf, "-sf", sf, "-p", p, c, "-n", n]
         if self.outputDirBox.text() != "":
             args.append("-o")
             args.append(self.outputDirBox.text())
@@ -1226,9 +1154,13 @@ will by put within a folder named "out" in the current directory.''')
 
     def run_finished(self):
         output = self.output_area.toPlainText()
-        # NB: put a directory gen function into parse.py
-        # and use that to get the path here
-        outfile = os.path.join("out", "stdout.log")
+        args = [self.parent.protein_data,
+                self.parent.sim_data, self.parent.protein_name,
+                self.connectedOption.isChecked()]
+        if self.outputDirBox.text() != "":
+            args.append(self.outputDirBox.text())
+        outdir = parse.generate_output_dirs(*args)
+        outfile = os.path.join(outdir, "stdout.log")
         try:
             with open(outfile, "w") as f:
                 f.write(output)
@@ -1255,15 +1187,15 @@ class STOPSetup(QWizard):
     def __init__(self):
         super().__init__()
         self.resize(QtCore.QSize(800, 600))
-        self.data = {}
+        self.protein_data = {}
         self.sim_data = {}
+        self.protein_name = ""
         self.protein_file = ""
-        self.protein = ""
         self.sim_file = ""
         self.addPage(loadExisting(self))
         self.addPage(nameNumber(self))
         self.addPage(namePigmentsStates(self))
-        self.addPage(pigmentProperties(self))
+        self.addPage(stateProperties(self))
         self.addPage(matrixTables(self))
         self.addPage(saveProteinPage(self))
         self.addPage(loadSimulation(self))

@@ -1,10 +1,8 @@
 import argparse
 import os
-import shutil
 import subprocess
 import json
-import itertools
-import numpy as np
+import numpy as np # only needed for fit
 import fit
 import parse
 
@@ -12,14 +10,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             description="set up aggregate simulation",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    # required arguments
     parser.add_argument('-pf', '--protein_file', type=str,
             default='protein.json',
             help=r'File to load protein data from in JSON format')
     parser.add_argument('-sf', '--simulation_file', type=str,
             default='simulation.json',
             help=r'File to load protein data from in JSON format')
-    # optional arguments
     parser.add_argument('-p', '--protein_name', type=str, default=None,
             help=r'Name of protein within protein file, if there are multiple')
     parser.add_argument('-o', '--outdir', type=str, default='out',
