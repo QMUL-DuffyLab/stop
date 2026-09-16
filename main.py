@@ -74,8 +74,9 @@ if __name__ == "__main__":
         '-np', f"{n_procs}",
         './stop', protein_file, simulation_file], check=True)
 
-    tau_init = [protein["intra"][0][0], np.min(protein["ann"]), 500e-12]
+    pdata = protein_json[protein_name]
+    tau_init = [pdata["intra"][0][0], np.min(pdata["ann"]), 500e-12]
     for i in range(simulation_json["n_repeats"]):
-        hist_file = os.path.join(outdir, f"{args.protein}_run_{i + 1:1d}.csv")
+        hist_file = os.path.join(outdir, f"{protein_name}_run_{i + 1:1d}.csv")
         for j in range(len(tau_init)):
             stuff = fit.do_fit(hist_file, tau_init[:j + 1], "simulation.json", None)

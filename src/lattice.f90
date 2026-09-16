@@ -15,7 +15,7 @@ module lattice
   contains
 
     subroutine generate_lattice(lattice_name, nmax)
-      character(len=10), intent(in) :: lattice_name
+      character(len=100), intent(in) :: lattice_name
       integer(kind=CI), intent(in) :: nmax
       integer(kind=CI), dimension(:, :), allocatable :: lv
       integer(kind=CI) :: n_current, i, j, k, m, coord, ri(2)

@@ -226,7 +226,7 @@ def do_fit(filename, tau_init, sim_file, irf_file=None):
     labels, bins, all_counts, ec, df = get_histogram(filename)
 
     all_file = f"{path}_all_decays.pdf"
-    plot_all(labels, bins, all_counts, all_file)
+    plot_all(df, all_file)
 
     ecn = ec / np.max(ec)
     xyn = np.column_stack((bins, ec, ecn))

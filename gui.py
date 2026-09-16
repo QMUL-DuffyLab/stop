@@ -618,7 +618,8 @@ class saveProteinPage(QWizardPage):
         layout = QVBoxLayout()
         gl = QGridLayout()
         pf = self.parent.protein_file
-        fstr = os.getcwd() if pf == "" else pf
+        default = os.path.join(os.getcwd(), f"{self.parent.protein_name}.json")
+        fstr = default if pf == "" else pf
         self.filename = QLineEdit(fstr)
         self.save_success = False
         self.load_success = False
@@ -644,7 +645,6 @@ class saveProteinPage(QWizardPage):
             del final_data[name]['decay']
         success = True
         self.existing_data = {}
-        # if the filename exists, try to open it and parse the JSON
         if os.path.isfile(self.filename.text()):
             with open(self.filename.text(), "r+", encoding='utf-8') as f:
                 try:
@@ -947,6 +947,7 @@ the fortran code in some way.''')
 
     def validatePage(self):
         self.updateData()
+        valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
             "whoospy daisy", ('\n').join(msgs))
