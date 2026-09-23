@@ -9,5 +9,4 @@ dependencies:
   - openmpi
   - pandas
   - scipy
-  - sympy
   - pyqt6
