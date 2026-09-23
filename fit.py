@@ -1,15 +1,34 @@
-import os
-import json
-import sympy
-import numpy as np
-import pandas as pd
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
-from scipy.signal import savgol_filter
-from scipy.special import factorial
+# -*- coding: utf-8 -*-
+import os            # For file and directory handling
+import numpy as np    # For numerical operations
+import pandas as pd   # For data manipulation with DataFrames
+import matplotlib.pyplot as plt  # For plotting
+from scipy.optimize import nnls, differential_evolution
 
-def get_histogram(filename):
+'''
+fitting of TCSPC curves output from STOP using
+NNLS and differential evolution. code mostly taken from
+https://github.com/mkizilov/ReconFit
+with unneeded stuff removed
+'''
+
+def gen_irf(filename, x):
+    '''
+    use the input file for the fortran to pull a FWHM for the pulse (IRF)
+    and generate the corresponding curve. in future, add this to the
+    fortran histogram!
+    '''
+    with open(filename, "r") as f:
+        lines = [line.rstrip() for line in f]
+    fwhm = float(lines[0])
+    sigma = fwhm / 2.355
+    mu = fwhm * 2.0 # fortran puts the peak there - will get shifted anyway
+    irf = ((1 / (sigma * np.sqrt(2. * np.pi))) *
+            np.exp(-(x - mu)**2 / (np.sqrt(2.) * sigma)**2))
+    irf /= np.sum(irf)
+    return irf
+
+def get_histogram(filename, irf_file=None):
     '''
     take the output from the fortran and return the stuff
     we need to plot and fit it all. pandas/xarray do not like this
@@ -25,7 +44,7 @@ def get_histogram(filename):
     emissive = [True if s == "T" else False for s in emissive_str]
     str_array = [line.split(" ") for line in lines[2:]]
     data = np.array([row for row in str_array]).astype(float)
-    bins = data[:, 0]
+    x = data[:, 0]
     counts = data[:, 1:]
     emissive_counts = counts[:, emissive[1:]]
     if emissive_counts.shape[1] > 1:
@@ -33,17 +52,26 @@ def get_histogram(filename):
     else:
         sum_emissive = emissive_counts
     all_columns = np.hstack((data, sum_emissive))
-    df = pd.DataFrame({l: c for l, c in zip(labels, all_columns.T)})
-    return labels, bins, counts, sum_emissive, df
+    d = {l: c for l, c in zip(labels, all_columns.T)}
+    if 'IRF' not in labels:
+        sim_file = os.path.join(
+                os.path.dirname(filename), "simulation_params")
+        d['IRF'] = gen_irf(sim_file, d['Time(s)'])
+    df = pd.DataFrame(d)
+    return df
 
-def get_si_exponent(x):
+def get_si_exponent(x, latex = True):
     '''
     return the SI exponent of a number and short/long prefixes
     '''
     # "μ" doesn't work with latex
-    exponent = np.around(np.floor(np.log10(float(x))) / 3) * 3
+    if latex:
+        mustr = r'$ \mu $'
+    else:
+        mustr = "μ"
+    exponent = np.floor(np.floor(np.log10(float(x))) / 3) * 3
     pref = {-12: ["p", "pico"], -9: ["n", "nano"],
-            -6: ["mu", "micro"], -3: ["m", "milli"], 0: ["", ""],
+            -6: [mustr, "micro"], -3: ["m", "milli"], 0: ["", ""],
             3: ["k", "kilo"], 6: ["M", "mega"], 9: ["G", "giga"],
             12: ["T", "tera"]}
     if exponent in pref:
@@ -51,30 +79,54 @@ def get_si_exponent(x):
     else:
         return (exponent, [None, None])
 
-def plot_setup(bins, nticks, norm_counts=True):
+def sci_format(x):
+    exponent, prefs = get_si_exponent(x)
+    if exponent == 0:
+        xp = f"{x / 10**exponent:.4f} " + "s"
+    else:
+        xp = f"{x / 10**exponent:.4f} " + prefs[0] + "s"
+    return xp
+
+def fix_x(x, nticks, ax):
+    '''
+    sort out the x axis of a given matplotlib.axis object
+    '''
+    xmax = np.max(x)
+    xticks = [i * (xmax) / (nticks - 1) for i in range(nticks)]
+    exponent, prefs = get_si_exponent(xmax)
+    xlabel = "Time (" + prefs[0] + "s)"
+    xtickround = np.around([i * (xmax / 10**exponent) / (nticks - 1)
+        for i in range(nticks)]).astype(int)
+    xticklabels = [str(i) for i in xtickround]
+    ax.set_xlabel(xlabel)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticklabels)
+    return ax
+
+def fix_y(ax, ymax):
+    '''
+    sort out the y axis of a given matplotlib.axis object
+    '''
+    ax.set_yscale('log')
+    ax.set_ylim([1e-5 * ymax, 1.1 * ymax])
+    if ymax == 1.:
+        ax.set_ylabel("Counts (normalised)")
+    else:
+        ax.set_ylabel("Counts")
+    return ax
+
+def plot_setup(x, nticks, ymax, cfigax=None):
     '''
     set up the figure and axes since they're gonna be the
     same for all the plots we do here
     '''
-    bmax = np.max(bins)
-    xticks = [i * (bmax) / (nticks - 1) for i in range(nticks)]
-    exponent, prefs = get_si_exponent(bmax)
-    xlabel = "Time" + f"({prefs[0]}s)"
-    xtickround = np.around([i * (bmax / 10**exponent) / (nticks - 1)
-        for i in range(nticks)]).astype(int)
-    xticklabels = [str(i) for i in xtickround]
-
-    fig, ax = plt.subplots(figsize=(12,8))
-    plt.grid(visible=True)
-    ax.set_yscale('log')
-    if norm_counts:
-        ax.set_ylim([1e-5, 1.1])
-        ax.set_ylabel("Counts (normalised)")
+    if cfigax is None:
+        fig, ax = plt.subplots(figsize=(12,8))
+        plt.grid(visible=True)
     else:
-        ax.set_ylabel("Counts")
-    ax.set_xlabel(xlabel)
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xticklabels)
+        fig, ax = cfigax
+    ax = fix_x(x, nticks, ax)
+    ax = fix_y(ax, ymax)
     return fig, ax
     
 def plot_all(df, outfile):
@@ -82,13 +134,12 @@ def plot_all(df, outfile):
     big plot with all binned decay pathways plotted, including
     ones which would be invisible to a real detector.
     '''
-    bins = df['Time(s)']
-    fig, ax = plot_setup(bins, 4, False)
+    fig, ax = plot_setup(df['Time(s)'], 4, np.max(df['Emitted']))
     for col in df.columns:
         if np.sum(df[col]) > 0:
             plt.plot(df['Time(s)'], df[col], label=col)
     ax.legend()
-    ax.set_ylim([0.8, 1.1 * np.max(df.values)])
+    ax.set_ylim([0.01, 1.1 * np.max(df.values)])
     fig.tight_layout()
     plt.savefig(outfile)
     plt.close()
@@ -98,287 +149,147 @@ def plot_all_from_file(histfile):
     wrap get_histogram and plot_all to make it easier
     if plotting bits in a terminal or whatever
     '''
-    labels, bins, counts, sum_emissive, df = get_histogram(histfile)
+    df = get_histogram(histfile)
     outfile = os.path.splitext(histfile)[0] + ".pdf"
     plot_all(df, outfile)
 
-def apply_savgol(df, window_length=5, polyorder=3, title=None):
-    df_smooth = df.copy()
-    df_smooth['Smoothed'] = savgol_filter(df['Emitted'], window_length=window_length, polyorder=polyorder)
-    return df_smooth
+def convolve(x, h):
+    X = np.fft.fft(x, n=len(x) + len(h) - 1)
+    H = np.fft.fft(h, n=len(x) + len(h) - 1)
+    xch = np.real(np.fft.ifft(X * H))
+    return xch[:len(x)]
 
-'''
-below is all taken from my old aggregate code
-'''
+def shift_irf(irf, irf_shift):
+    n = len(irf)
+    channel = np.arange(n)
+    frac = irf_shift - np.floor(irf_shift)
+    back = np.fmod(channel - np.floor(irf_shift), n)
+    fwd  = np.fmod(channel - np.ceil(irf_shift), n)
+    # contribution from lower bin
+    broll = (1 - frac) * irf[np.fmod(back + n, n).astype(int)]
+    # contribution from higher bin
+    froll = frac * irf[np.fmod(fwd + n, n).astype(int)]
+    return broll + froll
 
-def Convol(x, h):
-    X = np.fft.fft(x)
-    H = np.fft.fft(h)
-    return np.real(np.fft.ifft(X * H))
+def exp_decay(time, tau):
+    return np.exp(-time / tau)
 
-def exp_model(t, *args):
+def nnls_conv_irf(x_in, irf, params, y_in):
+    irf_shift, *tau0 = params
+    shifted_irf = shift_irf(irf, irf_shift)
+    decays = [convolve(shifted_irf, exp_decay(x_in, tau)) for tau in tau0]
+    decays.append(np.ones_like(x_in))  # Adding a constant offset term
+    A = np.vstack(decays).T
+    x_out, _ = nnls(A, y_in)
+    return A, x_out, np.dot(A, x_out)
+
+def residual_function(params, x_in, irf, y_in):
+    _, _, y_fit = nnls_conv_irf(x_in, irf, params, y_in)
+    residuals = (y_fit - y_in) / np.sqrt(y_fit + 1)
+    chi2 = np.sum(residuals ** 2)
+    chi2_reduced = chi2 / (len(x_in))
+    return chi2_reduced
+
+def reconvolution_fit(data, exp_num=1, tau_bounds=None, maxiter=1000,
+                      disp=False, workers=1):
     '''
-    given a set of amplitudes and time constants as
-    (a_1, ..., a_n, tau_1, ..., tau_n), return the
-    multiexponential curve as a function of t
+    perform reconvolution fit of TCSPC data using differential evolution.
+    note that this is a stochastic method; sometimes (especially when
+    doing monoexponential fits, in my experience) the output might be
+    nonsensical. for now just try running it again.
     '''
-    if len(args) == 0 or len(args) % 2 != 0:
-        raise ValueError("exp_model: incorrect number of arguments")
-    y = np.zeros(t.size)
-    n_exp = (len(args)) // 2
-    for i in range(n_exp):
-        y += args[i] * np.exp(-t / float(args[i + (n_exp)]))
-    return y
+    x     = data["Time(s)"].to_numpy()
+    y     = data["Emitted"].to_numpy()
+    irf   = data["IRF"].to_numpy()
+    if tau_bounds is None:
+        tau_bounds = [(1e-12, 1.)] * exp_num
+    tau_bounds = [(max(bound[0], 1e-12),
+                   max(bound[1], 1e-12)) for bound in tau_bounds]
+    param_bounds = [(-len(x)/2., len(x)/2.)]
+    param_bounds.extend(tau_bounds)
 
-def reconv(X, *args):
-    '''
-    return the multiexponential reconvolved with the IRF.
-    this is ugly internally as described lower in do_fit;
-    basically because of some limitation in scipy.curve_fit
-    X should be a tuple of t, the IRF, and the time constants.
-    args should be a_i, irf_shift
-    '''
-    t, irf, taus = X
-    ymodel = np.zeros(t.size)
-    irf_interp = np.interp(t, t - args[-1], irf)
-    if np.sum(irf_interp) > 0.0:
-        irf_reshaped_norm = irf_interp / np.sum(irf_interp)
-    else:
-        irf_reshaped_norm = irf_interp
-    for i in range(len(args) - 1):
-        ymodel += (args[i] * np.exp(-(t) / taus[i]))
-    z=Convol(ymodel,irf_reshaped_norm)
-    return z
+    # Global minimization using differential evolution
+    result = differential_evolution(residual_function, bounds=param_bounds, 
+            args=(x, irf, y), strategy='best1bin', maxiter=maxiter,
+            tol=1e-12, popsize = 5*exp_num*3, polish = True,
+            workers = workers, disp = disp)
+    best_popt = result.x
+    irf_shift_opt = best_popt[0]
+    tau_opt = best_popt[1:]
+    # pull out the best-fit amplitudes from the NNLS
+    A, x_out, y_fit = nnls_conv_irf(x, irf, best_popt, y)
+    amplitudes = x_out[:-1]
+    offset = x_out[-1]
+    chi2_reduced = residual_function(best_popt, x, irf, y)
+    # Sort tau and amplitudes based on tau
+    tau_opt, amplitudes = zip(*sorted(zip(tau_opt, amplitudes),
+                                      key=lambda x: x[0]))
+    return tau_opt, amplitudes, irf_shift_opt, offset, chi2_reduced
 
-def lifetimes(n, names, bv, err, covar):
-    '''
-    given a set of n exponentials, construct the expressions for
-    tau_amp and tau_int, calculate them with the best values `bv`,
-    calculate the error on those, and return a dict with all the
-    relevant information.
-    '''
-    strings = [[], [], []]
-    # define ai, taui for i = 1, n
-    sympy.symbols('tau:{:d}, a:{:d}'.format(n, n))
-    # build up the expressions for ai, ai * taui, ai * taui^2
-    for i in range(1, n + 1):
-        for j in range(3):
-            strings[j].append('a{:d} * tau{:d}**{:d}'.format(i, i, j))
-    # turn the lists of strings into the relevant sympy expressions
-    joined = [' + '.join(s) for s in strings]
-    tau = [sympy.sympify(j, evaluate=False) for j in joined]
-    # we need UnevaluatedExpr here otherwise sympy cancels the a1 for
-    # the monoexponential fit and we never get out its value or error
-    tau_amp = sympy.UnevaluatedExpr(tau[1]) / sympy.UnevaluatedExpr(tau[0])
-    tau_int = sympy.UnevaluatedExpr(tau[2]) / sympy.UnevaluatedExpr(tau[1])
-    # now start on relating these expressions to the fitted parameters
-    j_amp = np.zeros(len(names))
-    j_int = np.zeros(len(names))
-    var = list(tau_int.free_symbols) # same for both amp and int
-    tau_amp = tau_amp.doit()
-    tau_int = tau_int.doit()
-    # generate a list of tuples which tell sympy the values to substitute in
-    repl = [(var[i], bv[str(var[i])]) for i in range(len(var))]
-    # we're gonna return a dict which we turn into a pandas dataframe
-    # then compare to find how many exponents gave the best fit
-    d = {'n_exp': n}
-    for i in range(len(var)):
-        # dict key and index comparison require string representation
-        s = str(var[i])
-        # build up the dict as we go
-        d[s] = bv[s]
-        d[s + '_err'] = err[s]
-        '''
-        sympy doesn't order the variables ai, taui, but returns them as a set.
-        they are ordered in curve_fit though - whatever order we put them in in,
-        the covariance matrix etc is ordered the same way. so use `names` to find
-        the right index to put the derivative in and use that.
-        note that this also leaves the indices corresponding to x0 and y0 = 0,
-        wherever they are in the list, so we don't need to worry about them.
-        '''
-        ind = np.nonzero(np.array(names) == s)[0][0]
-        j_amp[ind] = sympy.diff(tau_amp, var[i]).subs(repl)
-        j_int[ind] = sympy.diff(tau_int, var[i]).subs(repl)
-    m_amp = np.matmul(j_amp, covar)
-    m_int = np.matmul(j_int, covar)
-    tau_amp_err = np.sqrt(np.matmul(m_amp, j_amp.transpose()))
-    tau_int_err = np.sqrt(np.matmul(m_int, j_int.transpose()))
-    d['tau_amp'] = tau_amp.subs(repl)
-    d['tau_amp_err'] = tau_amp_err
-    d['tau_int'] = tau_int.subs(repl)
-    d['tau_int_err'] = tau_int_err
-    print("tau_amp = {} +/- {} s".format(tau_amp.subs(repl), tau_amp_err))
-    print("tau_int = {} +/- {} s".format(tau_int.subs(repl), tau_int_err))
-    return d
-
-def do_fit(filename, tau_init, sim_file, irf_file=None):
-    '''
-    wrap all the above functions and do a reconvolution fit on the
-    histogram located at filename. tau_init should be a list of
-    initial time constants to use for curve_fit, sim_file should
-    be the JSON file with the simulation parameters in it.
-    '''
-    path = os.path.splitext(filename)[0]
-    with open(sim_file, "r") as f:
-        sim_json = json.load(f)
-    fluence = sim_json["fluence"]
-    
-    labels, bins, all_counts, ec, df = get_histogram(filename)
-
-    all_file = f"{path}_all_decays.pdf"
-    plot_all(df, all_file)
-
-    ecn = ec / np.max(ec)
-    xyn = np.column_stack((bins, ec, ecn))
-    max_count_time = xyn[np.argmax(ec), 0]
-    max_time = np.max(bins)
-    
-    cutoff = max_count_time
-
-    # errors for each count
-    if np.max(xyn[:, 1]) > 1.:
-        max_count = np.max(xyn[:, 1])
-    else:
-        print("Warning - assuming max_count = 10000. bin errors might be wrong")
-        max_count = 10000. # arbitrary!
-    sigma = np.zeros(xyn[:, 1].size)
-    for i in range(len(xyn[:, 1])):
-        if (xyn[i, 1] == 0.):
-            count = 1.
-        else:
-            count = xyn[i, 1]
-        sigma[i] = np.sqrt(1. / count + 1. / max_count)
-        
-    n_exp = len(tau_init)
-    print()
-    print(f"doing fit: n_exp = {n_exp}")
-
-    p0 = [*[1./n_exp for _ in range(n_exp)], *tau_init]
-    names = [] # these will be needed to construct a dataframe later
-    for i in range(n_exp):
-        names.append("a{:d}".format(i + 1))
-    for i in range(n_exp):
-        names.append("tau{:d}".format(i + 1))
-    # bounds for each of the time constants
-    lbs = tuple([0. for _ in range(len(p0))])
-    ubs = tuple([np.inf for _ in range(len(p0))])
-    bounds = [lbs, ubs]
-
-    tail = xyn[xyn[:, 0] >= cutoff]
-    tail_sigma = sigma[xyn[:, 0] >= cutoff]
-    x = tail[:, 0] - cutoff
-    y = tail[:, 2]
-    tail_popt, tail_pcov = curve_fit(exp_model, x, y, p0=p0,
-            sigma=tail_sigma, bounds=bounds)
-    tail_err = np.sqrt(np.diag(tail_pcov))
-    
-    best_t = list(tail_popt[len(tail_popt)//2:])
-    print("Time constant(s) from tail fit = ", best_t)
-    print("Errors from tail fit = ", tail_err)
-    best_a = list(tail_popt[:len(tail_popt)//2])
-    print("Amplitude(s) from tail fit = ", best_a)
-    # need this to plot the tail fit later
-    bf = exp_model(xyn[:, 0], *tail_popt)
-    
-    '''
-    now do the same for the IRF
-    '''
-    irf_norm = np.zeros(ec.size)
-    # NB: update this. the fortran should output a pulse file
-    # and then we read that in
-
-    sig = sim_json["fwhm"] / 2.355
-    if "mu" in sim_json:
-        pm = sim_json["mu"]
-    else:
-        pm = sim_json["fwhm"] * 2.0
-    irf_gen = ((1 / (sig * np.sqrt(2. * np.pi))) *
-            np.exp(-(xyn[:, 0] - pm)**2 / (np.sqrt(2.) * sig)**2))
-    irf_norm = irf_gen / np.max(irf_gen)
-
-    # fit tail with IRF
-    fig, ax = plot_setup(bins, 4, True)
-    plt.plot(x, y, ls='--', marker='o', label='Decays')
-    plt.plot(x, exp_model(x, *tail_popt),
-            label=r'Fit: $ \tau_i = $' + f"{best_t}")
-    plt.plot(xyn[:, 0] - cutoff, irf_norm, label='IRF')
-    plt.legend(fontsize=32)
-    plt.tight_layout()
-    fstr = np.format_float_scientific(fluence)
-    plt.savefig(f"{path}_{fstr}_tail_fit_{n_exp}.pdf")
-    plt.close()
-
-    """
-    now we need to do something horrible!
-    generate an empty array with the same length as x and irf, and fill
-    the first n_exp elements with our time constants. 
-    we do this because we want to keep them fixed in the subsequent fit, but:
-      - you can't just pass (X, irf, *best_t) because
-        the arrays have to have the same shape (?)
-      - you can't wrap it in lambda X, *best_t because
-        then the reconvolution function is passed
-        with two extra arguments, for some reason
-    This second point is something internal to curve_fit;
-    just doing f = lambda X, *best_t: 
-    print(len((X, *best_t, *best_a, x0, irf_shift))) returns 5, but when you
-    do that in curve_fit it returns 7. 
-    no idea why. bug? something to do with self?
-    """
-    
-    taus = np.zeros(len(xyn[:, 0]))
-    for i in range(n_exp):
-        taus[i] = best_t[i]
-
-    irf_shift = 0.0
-    X = (xyn[:, 0], irf_norm, taus)
-    p0 = [*best_a, irf_shift]
-    lbs = tuple([0. for _ in range(len(best_a))] + [-0.5 * max_time])
-    ubs = tuple([np.inf for _ in range(len(best_a))] + [0.5 * max_time])
-    bounds = [lbs, ubs]
-    popt, pcov = curve_fit(reconv,
-            X, xyn[:, 2], p0=p0, sigma=sigma, bounds=bounds)
-    bf = reconv(X, *popt)
-
-    print("best fit for amps, irf_shift: ", popt)
-
-    # now set up the lifetime calculations
-    err = np.sqrt(np.diag(pcov))
-    best_values = dict(zip(names, np.concatenate((popt[:n_exp], best_t))))
-    errors = dict(zip(names, np.concatenate((err[:n_exp], tail_err[n_exp:]))))
-    # amplitudes and time constants are fitted separately
-    # so their covariance is necessarily zero
-    cov = np.block([
-        [pcov[:n_exp, :n_exp], np.zeros((n_exp, n_exp))],
-        [np.zeros((n_exp, n_exp)), tail_pcov[n_exp:, n_exp:]]
-    ])
-
-    d = lifetimes(n_exp, names, best_values, errors, cov)
-    d["n_exp"] = n_exp
-    d["irf_shift"] = popt[-1]
-    d["irf_shift_err"] = err[-1]
-    d["cutoff"] = cutoff
-    
-    exponent, prefs = get_si_exponent(d["tau_amp"])
-    tstr = [f"{x/10**exponent:4.2f}"
-            for x in [d["tau_amp"], d["tau_amp_err"]]]
-    taustr = tstr[0] + r' $ \pm $' + tstr[1] + f"{prefs[0]}s"
-
-    fig, ax = plot_setup(bins, 4, True)
-    plt.suptitle(f"{fstr}: " + r'$ \tau_{\text{amp.}} = $' + taustr)
-    plot_file = f"{path}_{fstr}_reconv_{n_exp}.pdf"
-    ax.plot(xyn[:, 0], xyn[:, 2], ls='--', marker='o', label='Decays')
-    ax.plot(xyn[:, 0], reconv(X, *popt), label='fit')
-    fig.tight_layout()
-    plt.savefig(plot_file)
-    plt.close()
-
-    df = pd.DataFrame(d, index=[0])
-    df_file = f"{path}_{fstr}_fit_{n_exp}.csv"
-    df.to_csv(df_file)
-
-    count_file = f"{path}_{fstr}_norm_counts.txt"
-    np.savetxt(count_file, np.column_stack((xyn[:, 0], xyn[:, 2])))
-    fit_file = f"{path}_{fstr}_fit_xy_{n_exp}.txt"
-    np.savetxt(fit_file, np.column_stack((xyn[:, 0], bf)))
-
-    return (d, np.column_stack((xyn[:, 0], xyn[:, 2], bf)))
+def multi_fit(filename, nmax):
+    df = get_histogram(filename)
+    x = df['Time(s)']
+    y = df['Emitted']
+    # make a dict of the fits
+    od = {}
+    od['Time(s)'] = x
+    od['Emitted'] = y
+    logfile = os.path.splitext(filename)[0] + "_fit_log.txt"
+    with open(logfile, "w") as f:
+        for n_exp in range(1, nmax + 1):
+            print(f"Fitting histogram from {filename} "
+            f"with {n_exp} exponentials.")
+            tau_opt, amps_opt, shift_opt, offset, rchi2 = reconvolution_fit(
+                df,exp_num=n_exp)
+            f.write(f"Fitting with n_exp = {n_exp}:\n")
+            f.write(f"tau = {tau_opt}\n")
+            f.write(f"amps = {amps_opt}\n")
+            f.write(f"irf_shift = {shift_opt}\n")
+            f.write(f"offset = {offset}\n")
+            f.write(f"reduced chi^2 = {rchi2}\n") 
+            f.write("\n")
+            title = [f"n_exp = {n_exp}"]
+            taustr = (', ').join([sci_format(t) for t in tau_opt])
+            ampstr = (', ').join([f"{a:.4f}" for a in amps_opt])
+            title.append(f"taus = {taustr}")
+            title.append(f"amps = {ampstr}")
+            title.append(f"irf_shift = {shift_opt:.2}")
+            title.append(f"offset = {offset:.2}")
+            title.append(f"reduced_chi^2 = {rchi2:.2}")
+            tstr = ('\n').join(title)
+            opt = np.zeros_like(x)
+            for j in range(n_exp):
+                opt += amps_opt[j] * exp_decay(x, tau_opt[j])
+            od[f"Decays_{n_exp}_exp"] = opt
+            shifted_irf = shift_irf(df['IRF'], shift_opt)
+            od[f"Shifted_IRF_{n_exp}_exp"] = shifted_irf
+            y_fit = convolve(opt, shifted_irf)
+            od[f"Fit_{n_exp}_exp"] = y_fit
+            ymax = np.max(df['Emitted'])
+            residuals = (y_fit - y) / np.sqrt(y_fit + 1)
+            fig, ax = plt.subplots(2, 1,
+                        gridspec_kw={'height_ratios': [3, 1]},
+                        layout="constrained",
+                        sharex=True, figsize=(12, 10))
+            ax[0] = fix_y(ax[0], ymax)
+            ax[0].plot(x, df['Emitted'], label="Emitted", alpha=0.5, lw=2.)
+            ax[0].plot(x, shifted_irf * (ymax / np.max(shifted_irf)),
+                       label="IRF (scaled + shifted)", alpha=0.5, lw=2.)
+            ax[0].plot(x, y_fit,
+                       label=r'Fit ($ n_{\text{exp}} ' + f" = {n_exp} $)", lw=3.)
+            ax[0].legend()
+            ax[1] = fix_x(x, 4, ax[1])
+            ax[1].plot(x, residuals, label='Residuals', alpha=0.5, lw=2.)
+            ax[1].set_ylabel('Residuals')
+            ax[1].axhline(y=0, color='grey', linestyle='--')
+            ax[1].legend()
+            for axis in ax:
+                axis.grid(visible=True, which='major', axis='both',
+                          color='k', alpha=0.25, linestyle='--', lw=0.5)
+            outfile = os.path.splitext(filename)[0] + f"n_exp_{n_exp}_ml_fit.pdf"
+            fig.suptitle(tstr)
+            fig.savefig(outfile)
+            plt.close()
+    fdf = pd.DataFrame(od)
+    fdf_file = os.path.splitext(filename)[0] + "_fits.csv"
+    fdf.to_csv(fdf_file)
