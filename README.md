@@ -21,21 +21,28 @@ Note that e.g. ipython and jupyter are not included in that YAML file because th
 Setup
 =====
 
-The Python code uses two JSON files, one containing protein parameters and one containing simulation parameters; examples are included in `protein.json` and `simulation.json`. You can set these up manually if you'd like; skip to the [protein](#protein-parameters) and [simulation](#simulation-parameters) explain how the JSON is structured. Alternatively, run `python gui.py` from the root directory of the repo. This will take you through the process of creating/importing/modifying the relevant input files and then finally will run the code for you with a box to show the terminal output.
+The Python code uses two JSON files, one containing protein parameters and one containing simulation parameters; examples are included in `protein.json` and `simulation.json`. You can set these up by hand if you'd like; skip to the [protein](#protein-parameters) and [simulation](#simulation-parameters) sections which explain how the JSON is structured. Alternatively, run `python gui.py` from the root directory of the repo. The main window that opens has buttons to import existing JSON files or create them, for both the protein and the simulation parameters; just click Create as needed and it will take you through the process.
 
-Running
-=======
+Running via GUI
+===============
 
-As mentioned above, if you do `python gui.py` and set up the input files, eventually you'll reach a screen with some final options and a big button that says "Run simulation". Click this button to Run simulation. The terminal output will appear in the box below the button.
+As mentioned above, if you do `python gui.py` you'll see a screen with some options and boxes and buttons. Choose a protein parameter file and a protein name within that file if there are multiple, choose a simulation parameter file, change any of the other options you want to change. Then click the "Run simulation" button to Run simulation. The terminal output will appear in the box below the button.
 
-By default, the Python wrapper will create a folder `out` inside the code folder, and put the output files in there with a subfolder hierarchy based on the name of the protein, the fluence and rep rate, and so on. Once you've run a simulation and it's finished, click around in that output folder, hopefully it will be fairly self-explanatory.
+By default, the Python wrapper will create a folder `out` inside the code folder, and put the output files in there with a subfolder hierarchy based on the name of the protein, the fluence and rep rate, and so on. Once you've run a simulation and it's finished, click around in that output folder, hopefully it will be fairly self-explanatory. If you'd like to set up this folder structure somewhere else just write a file path in the Output directory box.
+
+When importing a set of protein parameters the check box that says Connected will check or uncheck itself based on whether you've set any nonzero hopping rates. If you're doing simulations of a protein in aggregate this box should be checked. If they're unconnected to each other, like in a detergent solution or whatever, this box should not be checked. The GUI will warn you if there are nonzero hopping rates (implying connection) but you have unchecked it; likewise if all the hopping rates are zero but the box is checked.
+
+Also check the "Recommended number of cores" line for a *maximum* number of cores to run with; this is what python's built-in `os.cpu_count()` returns for your system, which may or may not be the actual number of cores you have. The default is 1. Increasing the number of cores should increase performance to a point, but if you set the number higher than the number of cores you actually have it'll make the code slower.
+
+Running in a terminal
+=====================
 
 Alternatively you can run it manually in a terminal by calling `python main.py ` with various options. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is `-pf FILE`, where `FILE` should be a filename containing JSON data for the protein you want to simulate.
 Optional ones are:
 
 - `-p PROTEIN_NAME`, where `PROTEIN_NAME` should be a string. The code will search for the key `PROTEIN_NAME` in the protein file given. This is so that you can (for example) make one big protein.json file with lots of details of different proteins in it and then pick one. If not given, the code will search for keys in the protein file: if there's only one, or if there's one that matches the filename, it will use that (and print a warning).
 - `-o OUTPUT_PATH`, where `OUTPUT_PATH` is a string. This changes the root directory for the output files to be placed in. If not given, will default to `./out` (i.e. a new folder named "out" in your current directory).
-- `-c CONNECTED`, where `CONNECTED` should be True or False. if True, hopping rates will be left as-is in order to simulate a connected aggregate of proteins; if False, this will zero out all hopping rates to simulate an ensemble of unconnected proteins (e.g. if you're experimenting on membrane proteins in detergent).
+- `--connection` or `--no-connection`. if `--connection`, hopping rates will be left as-is in order to simulate a connected aggregate of proteins; if `--no-connection`, this will zero out all hopping rates to simulate an ensemble of unconnected proteins (e.g. if you're experimenting on membrane proteins in detergent). A warning will be printed to stdout if the hopping rates are all zero but you've set `--connection` or vice-versa, but it will happily still run.
 - `-n NUM_CORES`, where `N_CORES` should be a number. This is the number of cores that will be passed to the OpenMPI call in the fortran - more cores will make it run faster so long as you have the cores available on your machine. Setting this to use more cores than you actually have will make the performance worse, though. The GUI will show what `os.cpu_count()` returns, which you should probably take as a maximum recommended value, and actually the best value is quite probably smaller than that. On a modern laptop try 2 or 4 and see how it goes.
 
 The Python wrapper will take all these options, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns. By default it will use the decay times of the protein states as a starting point and try 1- to n-exponential fits based on those.
@@ -109,7 +116,10 @@ This is a simpler little file. I think that most if not all of these should be s
 - `n_repeats` is how many repeats you want to do
 - `debug` should be true or false. if true, the fortran will output some extra stuff about move statistics that you probably don't need
 
-Note: The fitting code will output various CSV and text files containing the fitted arrays, details of the fits and errors and so on, but it doesn't do anything sophisticated to compare the fit between repeats.
+Fitting
+=======
+
+The code will call a fitting function when it finishes its runs. The fit works by doing differential evolution with a non-negative least squares solver as the objective function; it will try to do 1 to 3 exponential fits by default. Fit results and plots and so forth will be placed in the output folder as well. Note that there's no sophisticated stuff done to compare the fits between repeats or anything because I am a little baby who's scared of doing statistics.
 
 FAQS
 ====
