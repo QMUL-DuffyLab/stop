@@ -8,7 +8,7 @@ import sys
 import os
 import random
 import numpy as np
-from PyQt6 import QtCore, QtWidgets, QtGui
+from PyQt6 import QtCore, QtWidgets, QtGui, uic
 from PyQt6.QtCore import Qt
 import json
 from PyQt6.QtWidgets import *
@@ -44,6 +44,24 @@ TODO:
       for things like going back and forth through the wizard is harder
       to standardise, I've been trying to test as i go
 '''
+
+def load_from_file(widget, filename):
+    data = {}
+    success = False
+    if os.path.isfile(filename):
+        with open(filename) as f:
+            try:
+                data = json.load(f)
+                success = True
+            except:
+                box = QMessageBox.critical(widget,
+                "JSON import failed", f"Failed to load data from {filename}.")
+    else:
+        box = QMessageBox.critical(widget,
+        "Load failed", f"Filename {filename} does not exist.")
+    return success, data
+
+main_ui_class, main_ui_widget = uic.loadUiType("main.ui")
 
 class loadExisting(QWizardPage):
     def __init__(self, parent):
@@ -84,31 +102,16 @@ Will be used to generate output directory structure.''')
         layout.addLayout(gl)
         self.setLayout(layout)
 
-    def load_from_file(self):
-        if os.path.isfile(self.filename.text()):
-            with open(self.filename.text()) as f:
-                try:
-                    self.all_json_data = json.load(f)
-                    success = True
-                except:
-                    self.all_json_data = {}
-                    box = QMessageBox.critical(self,
-                    "whoopsy daisy", "Failed to load protein data from JSON.")
-                    success = False
-        else:
-            box = QMessageBox.critical(self,
-            "whoopsy daisy", "Protein JSON file does not exist.")
-            success = False
-        return success
-
     def onBrowseButton(self):
+        self.proteinChooser.clear()
         self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
                                               os.getcwd(),
                                               "JSON file (*.json)")
         self.filename.setText(self.fn)
 
     def onLoadButton(self):
-        self.load_success = self.load_from_file()
+        self.load_success, self.all_json_data = load_from_file(self,
+                self.filename.text())
         if self.load_success:
             protein_names = self.all_json_data.keys()
             for name in protein_names:
@@ -726,22 +729,6 @@ class loadSimulation(QWizardPage):
         layout.addLayout(gl)
         self.setLayout(layout)
 
-    def load_from_file(self):
-        if os.path.isfile(self.filename.text()):
-            with open(self.filename.text()) as f:
-                try:
-                    self.data = json.load(f)
-                    success = True
-                except:
-                    box = QMessageBox.critical(self,
-                    "whoospy daisy", "JSON load failed.")
-                    success = False
-        else:
-            box = QMessageBox.critical(self,
-            "whoospy daisy", "File does not exist.")
-            success = False
-        return success
-
     def onBrowseButton(self):
         self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
                                               os.getcwd(),
@@ -749,7 +736,8 @@ class loadSimulation(QWizardPage):
         self.filename.setText(self.fn)
 
     def onLoadButton(self):
-        self.load_success = self.load_from_file()
+        self.load_success, self.data = load_from_file(self,
+                                                      self.filename.text())
 
     def onResetButton(self):
         self.load_success = False
@@ -1023,76 +1011,94 @@ class saveSimPage(QWizardPage):
     def validatePage(self):
         return self.save_success
 
-class runPage(QWizardPage):
-    def __init__(self, parent):
-        QWizardPage.__init__(self, parent)
-        self.parent = parent
-        self.setTitle("Run")
-        self.setSubTitle("Final setup and running simulations.")
-        self.process = None
-        self.layout = QVBoxLayout()
-        self.gl = QGridLayout()
-        self.connectedLabel = QLabel("Connected:")
-        self.connectedLabel.setToolTip(
-'''Set connectivity on or off. Uncheck this box to zero out hopping rates
-for all states, effectively simulating a set of completely isolated
-proteins with no energy transfer between them.''')
-        self.coresLabel = QLabel("Number of cores to use:")
-        self.coresLabel.setToolTip(
-'''The fortran code can use OpenMPI to reduce simulation time by running on
-multiple cores simultaneously. If you're on a multi-core machine then setting
-n > 1 will probably improve performance, but don't set it to more than the
-number of cores you actually have, that'll probably just make it slower.''')
-        self.proteinFileBox = QLineEdit()
-        self.proteinChoice = QLabel()
-        self.outputDirBox = QLineEdit()
-        self.outputDirLabel = QLabel("Main output directory:")
-        self.outputDirLabel.setToolTip(
-'''Change the main output directory if necessary. If not given, the output
-will by put within a folder named "out" in the current directory.''')
-        self.simulationFileBox = QLineEdit()
-        self.connectedOption = QCheckBox()
-        self.connectedOption.setChecked(True)
-        self.coresBox = QSpinBox()
-        self.coresBox.setValue(1)
-        cs = f"Recommended max cores (os.cpu_count()): {os.cpu_count()}"
-        self.coresGuideLabel = QLabel(cs)
+class ProteinDataBuilder(QWizard):
+    def __init__(self):
+        super().__init__()
+        self.resize(QtCore.QSize(800, 600))
+        self.protein_data = {}
+        self.protein_name = ""
+        self.protein_file = ""
+        self.addPage(loadExisting(self))
+        self.addPage(nameNumber(self))
+        self.addPage(namePigmentsStates(self))
+        self.addPage(stateProperties(self))
+        self.addPage(matrixTables(self))
+        self.addPage(saveProteinPage(self))
+        self.setWindowTitle("Protein parameter wizard")
 
-        self.gl.addWidget(QLabel("Protein file:"), 0, 0)
-        self.gl.addWidget(QLabel("Protein name:"), 1, 0)
-        self.gl.addWidget(QLabel("Simulation file:"), 2, 0)
-        self.gl.addWidget(self.outputDirLabel, 3, 0)
-        self.gl.addWidget(self.connectedLabel, 4, 0)
-        self.gl.addWidget(self.coresLabel, 5, 0)
-        self.gl.addWidget(self.proteinFileBox, 0, 1)
-        self.gl.addWidget(self.proteinChoice, 1, 1)
-        self.gl.addWidget(self.simulationFileBox, 2, 1)
-        self.gl.addWidget(self.outputDirBox, 3, 1)
-        self.gl.addWidget(self.connectedOption, 4, 1)
-        self.gl.addWidget(self.coresBox, 5, 1)
-        self.gl.addWidget(self.coresGuideLabel, 5, 2)
-        self.runButton = QPushButton("Run simulation")
+class SimulationDataBuilder(QWizard):
+    def __init__(self):
+        super().__init__()
+        self.resize(QtCore.QSize(800, 600))
+        self.sim_data = {}
+        self.sim_file = ""
+        self.addPage(loadSimulation(self))
+        self.addPage(simulationParameters(self))
+        self.addPage(saveSimPage(self))
+
+class main_window(main_ui_class, main_ui_widget):
+    def __init__(self, parent=None):
+        super().__init__()
+        self.setupUi(self)
+        self.browseProteinButton.clicked.connect(self.browseProtein)
+        self.createProteinButton.clicked.connect(self.createProtein)
+        self.browseSimulationButton.clicked.connect(self.browseSimulation)
+        self.createSimulationButton.clicked.connect(self.createSimulation)
+        self.proteinChoice.currentTextChanged.connect(self.updateConnected)
         self.runButton.clicked.connect(self.run)
-        self.gl.addWidget(self.runButton, 6, 0, 1, -1)
-        self.output_area = QPlainTextEdit()
-        self.output_area.setReadOnly(True)
+        self.stopButton.clicked.connect(self.kill)
+        self.quitButton.clicked.connect(self.quit)
+        self.protein_window = None
+        self.simulation_window = None
+        self.process = None
+        self.all_pd = {}
+        self.pd = {}
+        self.sd = {}
+        cs = f"Recommended max cores (os.cpu_count()): {os.cpu_count()}"
+        self.coresGuideLabel.setText(cs)
 
-        self.layout.addLayout(self.gl)
-        self.layout.addWidget(self.output_area)
-        self.killButton = QPushButton("Stop simulation")
-        self.killButton.clicked.connect(self.kill)
-        self.layout.addWidget(self.killButton)
-        self.setLayout(self.layout)
+    def updateConnected(self):
+        p = self.proteinChoice.currentText()
+        if p in self.all_pd:
+            hh = self.all_pd[p]['hop']
+            b = any([h > 0.0 for h in hh])
+            self.connectedBox.setChecked(b)
 
-    def initializePage(self):
-        self.proteinFileBox.setText(self.parent.protein_file)
-        self.proteinChoice.setText(self.parent.protein_name)
-        self.simulationFileBox.setText(self.parent.sim_file)
-        self.nonzero_hop = False
-        for h in self.parent.protein_data['hop']:
-            if h > 0.0:
-                self.nonzero_hop = True
-        self.connectedOption.setChecked(self.nonzero_hop)
+    def browseProtein(self):
+        self.proteinChoice.clear()
+        self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
+                                              os.getcwd(),
+                                              "JSON file (*.json)")
+        self.proteinFileBox.setText(self.fn)
+        self.load_success, self.all_pd = load_from_file(self,
+                        self.proteinFileBox.text())
+        if self.load_success:
+            for k in self.all_pd.keys():
+                self.proteinChoice.addItem(k)
+
+    def createProtein(self):
+        if self.protein_window is None:
+            self.protein_window = ProteinDataBuilder()
+            protein_filename = self.protein_window.protein_file
+            self.protein_window.show()
+            self.proteinFileBox.setText(protein_filename)
+        else:
+            self.protein_window.close()
+            self.protein_window = None
+
+    def browseSimulation(self):
+        self.fn, _ = QFileDialog.getOpenFileName(self, "Select JSON file",
+                                              os.getcwd(),
+                                              "JSON file (*.json)")
+        self.simulationFileBox.setText(self.fn)
+
+    def createSimulation(self):
+        if self.simulation_window is None:
+            self.simulation_window = SimulationDataBuilder()
+            self.simulation_window.show()
+        else:
+            self.simulation_window.close()
+            self.simulation_window = None
 
     def run(self):
         '''
@@ -1100,42 +1106,91 @@ will by put within a folder named "out" in the current directory.''')
         '''
         if self.process is not None:
             return
+        pls, self.all_pd = load_from_file(self, self.proteinFileBox.text())
+        if not pls:
+            return
+        sls, self.sd = load_from_file(self, self.simulationFileBox.text())
+        if not sls:
+            return
+
+        p = f"{self.proteinChoice.currentText()}"
+        self.pd = self.all_pd[p]
+        valid, msgs = parse.parse_protein(self.pd)
+        if not valid:
+            msgs.append("Try clicking Create and fixing JSON data.")
+            self.simulationErrors = QMessageBox.critical(self,
+            "Protein load errors", ('\n').join(msgs))
+            return
+
+        valid, msgs = parse.parse_simulation(self.sd)
+        if not valid:
+            msgs.append("Try clicking Create and fixing JSON data.")
+            self.simulationErrors = QMessageBox.critical(self,
+            "Simulation errors", ('\n').join(msgs))
+            return
+
         self.process = QtCore.QProcess(self)
-        self.output_area.clear()
+        self.outputArea.clear()
         self.runButton.setEnabled(False)
         self.process.readyReadStandardOutput.connect(self.read_stdout)
         self.process.readyReadStandardError.connect(self.read_stderr)
         self.process.finished.connect(self.run_finished)
 
-        pf = f"{self.parent.protein_file}"
-        sf = f"{self.parent.sim_file}"
-        p = f"{self.parent.protein_name}"
-        if self.connectedOption.isChecked():
+        pf = f"{self.proteinFileBox.text()}"
+        sf = f"{self.simulationFileBox.text()}"
+        n = f"{self.numCores.value()}"
+
+        if self.connectedBox.isChecked():
             c = "--connection"
+            if all([h == 0.0 for h in self.pd['hop']]):
+                box = QMessageBox.warning(self,
+                "Simulation errors","All hopping rates are set to zero "
+                "but connection box is checked. Proceed?")
+                box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
+                box.setDefaultButton(QtMessageBox.StandardButton.No)
+                button = box.exec()
+                if button == QMessageBox.No:
+                    valid = False
         else:
             c = "--no-connection"
-        n = f"{self.coresBox.value()}"
+            if any([h > 0.0 for h in self.pd['hop']]):
+                box = QMessageBox.warning(self,
+                "Simulation errors","There are non-zero hopping rates, "
+                "but connection box is set to unconnected (detergent)"
+                ". Proceed?")
+                box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
+                box.setDefaultButton(QtMessageBox.StandardButton.No)
+                button = box.exec()
+                if button == QMessageBox.No:
+                    valid = False
+
         args = ["main.py", "-pf", pf, "-sf", sf, "-p", p, c, "-n", n]
         if self.outputDirBox.text() != "":
             args.append("-o")
             args.append(self.outputDirBox.text())
-        self.process.start("python", args)
+
+        if valid:
+            self.process.start("python", args)
+        else:
+            self.process.kill()
+            self.process = None
+            self.runButton.setEnabled(False)
 
     def read_stdout(self):
         data = self.process.readAllStandardOutput()
         text = bytes(data).decode("utf-8")
-        self.output_area.appendPlainText(text.rstrip())
+        self.outputArea.appendPlainText(text.rstrip())
 
     def read_stderr(self):
         data = self.process.readAllStandardError()
         text = bytes(data).decode("utf-8")
-        self.output_area.appendPlainText(text.rstrip())
+        self.outputArea.appendPlainText(text.rstrip())
 
     def run_finished(self):
-        output = self.output_area.toPlainText()
-        args = [self.parent.protein_data,
-                self.parent.sim_data, self.parent.protein_name,
-                self.connectedOption.isChecked()]
+        output = self.outputArea.toPlainText()
+        args = [self.pd,
+                self.sd, self.proteinChoice.currentText(),
+                self.connectedBox.isChecked()]
         if self.outputDirBox.text() != "":
             args.append(self.outputDirBox.text())
         outdir = parse.generate_output_dirs(*args)
@@ -1156,37 +1211,29 @@ will by put within a folder named "out" in the current directory.''')
         if self.process is None:
             return
         self.process.kill()
-        self.output_area.appendPlainText("Simulation stopped.")
+        self.outputArea.appendPlainText("Simulation stopped.")
         self.process = None
 
-    def validatePage(self):
-        return True if self.process is None else False
+    def quit(self):
+        if self.process is not None:
+            box = QMessageBox.critical(self,
+            "Really quit?", "Simulation is running. Really quit?")
+            box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
+            box.setDefaultButton(QtMessageBox.StandardButton.No)
+            button = box.exec()
+            if button == QMessageBox.Yes:
+                self.kill()
+                self.close()
+        else:
+            self.kill()
+            self.close()
 
-class STOPSetup(QWizard):
-    def __init__(self):
-        super().__init__()
-        self.resize(QtCore.QSize(800, 600))
-        self.protein_data = {}
-        self.sim_data = {}
-        self.protein_name = ""
-        self.protein_file = ""
-        self.sim_file = ""
-        self.addPage(loadExisting(self))
-        self.addPage(nameNumber(self))
-        self.addPage(namePigmentsStates(self))
-        self.addPage(stateProperties(self))
-        self.addPage(matrixTables(self))
-        self.addPage(saveProteinPage(self))
-        self.addPage(loadSimulation(self))
-        self.addPage(simulationParameters(self))
-        self.addPage(saveSimPage(self))
-        self.addPage(runPage(self))
-        self.setWindowTitle("Setup wizard for STOP")
+def start():
+    app =QtWidgets.QApplication([])
+    # widget = STOPSetup()
+    widget = main_window(None)
+    widget.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
-    app =QtWidgets.QApplication([])
-
-    widget = STOPSetup()
-    widget.show()
-
-    sys.exit(app.exec())
+    start()
