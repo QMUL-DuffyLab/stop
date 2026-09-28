@@ -40,6 +40,9 @@ Running in a terminal
 Alternatively you can run it manually in a terminal by calling `python main.py ` with various options. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is `-pf FILE`, where `FILE` should be a filename containing JSON data for the protein you want to simulate.
 Optional ones are:
 
+- `-pf PROTEIN_FILE`, where `PROTEIN_FILE` should be the name of the file where the protein parameters are stored. Default is `protein.json` in the current directory.
+- `-sf SIMULATION_FILE`, where `SIMULATION_FILE` should be the name of the file where the simulation parameters are stored. Default is `simulation.json` in the current directory.
+- `-p PROTEIN_NAME`, where `PROTEIN_NAME` should be a string. The code will search for the key `PROTEIN_NAME` in the protein file given. This is so that you can (for example) make one big protein.json file with lots of details of different proteins in it and then pick one. If not given, the code will search for keys in the protein file: if there's only one, or if there's one that matches the filename, it will use that (and print a warning).
 - `-p PROTEIN_NAME`, where `PROTEIN_NAME` should be a string. The code will search for the key `PROTEIN_NAME` in the protein file given. This is so that you can (for example) make one big protein.json file with lots of details of different proteins in it and then pick one. If not given, the code will search for keys in the protein file: if there's only one, or if there's one that matches the filename, it will use that (and print a warning).
 - `-o OUTPUT_PATH`, where `OUTPUT_PATH` is a string. This changes the root directory for the output files to be placed in. If not given, will default to `./out` (i.e. a new folder named "out" in your current directory).
 - `--connection` or `--no-connection`. if `--connection`, hopping rates will be left as-is in order to simulate a connected aggregate of proteins; if `--no-connection`, this will zero out all hopping rates to simulate an ensemble of unconnected proteins (e.g. if you're experimenting on membrane proteins in detergent). A warning will be printed to stdout if the hopping rates are all zero but you've set `--connection` or vice-versa, but it will happily still run.
@@ -115,6 +118,11 @@ This is a simpler little file. I think that most if not all of these should be s
 - `n_counts` is how many counts you want. really shouldn't have to explain this one
 - `n_repeats` is how many repeats you want to do
 - `debug` should be true or false. if true, the fortran will output some extra stuff about move statistics that you probably don't need
+
+Plotting
+========
+
+The main Python code will make plots of every process that had nonzero counts at the end of each run. These plots will be placed in the same folder as the output data and labelled by run.
 
 Fitting
 =======
