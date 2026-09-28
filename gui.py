@@ -33,13 +33,6 @@ and validatePage() is overridden to check that bool and print the error
 messages in a QMessageBox if there are any.
 
 TODO:
-    - implement parsers in parse.py. my idea is that i'll write a parser
-      for protein data and one for simulation data which each take a dict
-      and an optional set of keys. the data's then checked to make sure
-      there are no keys in there that shouldn't be and that the value
-      for each key is legitimate, and returns a bool along with error
-      messages as checkData() does currently. that way i can centralise
-      all the parser code and reuse it on the run page and in main.py.
     - maybe (MAYBE) get the fortran to print out intermediate histograms
       as it goes, and then plot them in a separate window, possibly along
       with the population per rep (checked at intervals; could do this

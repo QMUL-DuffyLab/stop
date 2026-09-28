@@ -24,7 +24,7 @@ module mc
     real(kind=CF) :: rate = 0.0_CF
   end type
   type(move_type) :: cm ! current move
-  public :: construct_pulse, do_run, rep, n_accepted, mc_deallocations
+  public :: construct_pulse, do_run, pulse, rep, n_accepted, mc_deallocations
   
   contains
 
@@ -225,18 +225,23 @@ module mc
       m%rate = 0.0_CF
     end subroutine zero_move
 
-    subroutine construct_pulse(fwhm, dt, fluence)
+    subroutine construct_pulse(fwhm, dt, fluence, filename)
       real(kind=CF) :: fwhm, sigma, dt, fluence
-      integer :: i, pulse_len
+      integer :: i, pulse_len, nunit
+      character(len=*) :: filename
       mu = 2.0 * fwhm
       pulse_tmax = 2.0 * mu
       pulse_len = int(pulse_tmax / dt)
       sigma = (fwhm) / (2.0 * (sqrt(2.0 * log(2.0))))
       allocate(pulse(pulse_len), source=0.0_CF)
+      open(newunit=nunit, file=filename)
+      write(nunit, '(a, 1X, a)') "Time(s)", "IRF"
       do i = 1, pulse_len
         pulse(i) = (fluence) / (sigma * sqrt(2.0 * pi)) * &
           exp(-1.0 * ((i * dt) - (mu))**2 / (sqrt(2.0) * sigma)**2)
+        write(nunit, '(ES10.4, 1X, ES10.4)') i * dt, pulse(i)/fluence
       end do
+
     end subroutine construct_pulse
 
     subroutine possible_moves(site, ft)
@@ -372,7 +377,8 @@ module mc
           ! so ensure we've picked an off-diagonal element
           s2 = rand_int(n_s)
         end do
-        cm%rate = n_i(site, s) * intra_rates(site, s, s2)
+        cm%rate = n_i(site, s) * intra_rates(site, s, s2) *&
+          ((n_thermal(which_p(s2)) - n_i(site, s2)) / n_thermal(which_p(s2)))
         cm%ist = s
         cm%fst = s2
         cm%loss_index = (4 + (s - 1)) * n_s + s2
@@ -555,9 +561,9 @@ module mc
       counts = 0_CI
       tot_accepted = 0_CI
 
-      ! first column in emissive columns isn't a real one -
-      ! it's for the output file. could maybe replace this
-      ! with just emissive??
+      ! first column in emissive columns doesn't correspond to
+      ! anything in counts, so remove it here.
+      ! could maybe replace this with just emissive, shomehow
       ec = pack([(i, i = 1_CI, size(emissive_columns) - 1)],&
         emissive_columns(2:))
 
@@ -615,7 +621,11 @@ module mc
           end do
           write (*, '(a, I0, a, I0, a, I0, a, a)') "salt = ", salt,&
             " rep = ", rep, " current max count = ", curr_maxcount,&
-            " type = ", labels(ec + 1) ! labels 1 is "Time (s)"
+            " type = ", labels(ec + 1) ! labels 1 and 2 are "Time(s)", "IRF"
+          write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
+            "_salt_", salt, "_rep_", rep, ".csv"
+          call write_histogram(outfile, counts)
+
         end if
 
         if (debug) then
@@ -663,7 +673,7 @@ module mc
         float(tot_accepted(6)) / tot_accepted(5)
       write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&
         "_salt_", salt, "_rep_", rep, "_final.csv"
-      call write_histogram(outfile)
+      call write_histogram(outfile, counts)
 
       if (debug) then
         write(outfile, '(a, a, I0, a, I0, a)') trim(adjustl(out_file_path)),&

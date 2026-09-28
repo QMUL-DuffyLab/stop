@@ -28,7 +28,21 @@ def gen_irf(filename, x):
     irf /= np.sum(irf)
     return irf
 
-def get_histogram(filename, irf_file=None):
+def load_irf(filename, x, **kwargs):
+    '''
+    load an IRF from a file and interpolate it to the x-values
+    of the other data points x (from the histogram).
+    Assumes a two-column data file where the first column is
+    time and the second is the pulse/IRF
+    '''
+    df = pd.read_csv(filename, sep=" ", **kwargs)
+    xp = df["Time(s)"]
+    fp = df["IRF"]
+    irf = np.interp(x, xp, fp)
+    irf -= np.min(irf)
+    return irf/np.sum(irf)
+
+def get_histogram(filename, irf_file=None, **irf_kwargs):
     '''
     take the output from the fortran and return the stuff
     we need to plot and fit it all. pandas/xarray do not like this
@@ -53,7 +67,9 @@ def get_histogram(filename, irf_file=None):
         sum_emissive = emissive_counts
     all_columns = np.hstack((data, sum_emissive))
     d = {l: c for l, c in zip(labels, all_columns.T)}
-    if 'IRF' not in labels:
+    if irf_file is not None:
+        d['IRF'] = load_irf(irf_file, x, **irf_kwargs)
+    else:
         sim_file = os.path.join(
                 os.path.dirname(filename), "simulation_params")
         d['IRF'] = gen_irf(sim_file, d['Time(s)'])
@@ -226,8 +242,8 @@ def reconvolution_fit(data, exp_num=1, tau_bounds=None, maxiter=1000,
                                       key=lambda x: x[0]))
     return tau_opt, amplitudes, irf_shift_opt, offset, chi2_reduced
 
-def multi_fit(filename, nmax):
-    df = get_histogram(filename)
+def multi_fit(filename, nmax, irf_file=None):
+    df = get_histogram(filename, irf_file)
     x = df['Time(s)']
     y = df['Emitted']
     # make a dict of the fits

@@ -5,7 +5,7 @@ program main
   use mc
   implicit none
   character(200) :: protein_file, simulation_file, latt_file,&
-    hist_file, details_file, path
+    hist_file, pulse_file, details_file, path
   integer(kind=CI) :: num_procs, rank, mpierr, i, salt, nunit
   real(kind=CF) :: t_start, t_end
 
@@ -21,7 +21,9 @@ program main
 
   call generate_lattice(lattice_name, n_sites)
   call generate_histogram()
-  call construct_pulse(fwhm, dt1, fluence)
+
+  write(pulse_file, '(a, a)') trim(adjustl(outdir)), "pulse.txt"
+  call construct_pulse(fwhm, dt1, fluence, pulse_file)
 
   if (rank.eq.0) then
     call cpu_time(t_start)
@@ -37,8 +39,6 @@ program main
       trim(adjustl(protein_name)), "_run_", i, "_proc_", rank
 
     call do_run(salt, int(n_counts / num_procs), path)
-
-    call MPI_Barrier(MPI_COMM_WORLD, mpierr)
 
     if (rank.eq.0) then
       call MPI_Reduce(MPI_IN_PLACE, counts, size(counts), MPI_INT,&
@@ -61,7 +61,7 @@ program main
 
     if (rank.eq.0) then
       call print_lattice(latt_file, coords, neighbours)
-      call write_histogram(hist_file)
+      call write_histogram(hist_file, counts)
     end if
 
   end do

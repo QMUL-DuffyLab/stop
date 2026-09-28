@@ -10,9 +10,9 @@ module io
   integer, parameter, public :: hist_max = 10
   character(len=100), public :: protein_name, lattice_name
   character(len=50), allocatable :: labels(:)
-  character(len=200), public :: outdir
+  character(len=200), public :: outdir, label_fmt, em_fmt, hist_fmt
   logical, public :: debug
-  integer(kind=CI), public :: n_p, n_s, n_sites, n_bins,&
+  integer(kind=CI), public :: n_p, n_s, n_sites, n_bins, n_losses,&
     n_counts, n_repeats, burn_reps
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
   character(len=10), allocatable, public :: p_names(:), s_names(:)
@@ -185,7 +185,7 @@ module io
     end subroutine print_lattice
 
     subroutine generate_histogram()
-      integer :: n_losses, i, j, loss_index
+      integer :: i, j, loss_index
       n_losses = n_s * (4 + 2 * n_s)
       n_bins = ceiling(tmax / binwidth)
       allocate(counts(n_bins, n_losses), source=0_CI)
@@ -242,24 +242,23 @@ module io
         end do
       end do
 
+      write(label_fmt, '(a, i0, a)') "(", size(labels), "(a, 1X))"
+      write(em_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
+      write(hist_fmt, '(a, i0, a)') "(ES10.4, ", &
+        size(labels) - 1, "(1X, I0))"
+
     end subroutine generate_histogram
 
-    subroutine write_histogram(filename)
+    subroutine write_histogram(filename, hist)
       character(len=*) :: filename
+      integer(kind=CI), intent(in) :: hist(:, :)
       integer :: nunit, i
-      character(len=30) :: str_fmt
 
       open(newunit=nunit, file=filename)
-
-      write(str_fmt, '(a, i0, a)') "(", size(labels), "(a, 1X))"
-      write(nunit, str_fmt) (trim(adjustl(labels(i))), i=1,size(labels))
-
-      write(str_fmt, '(a, i0, a)') "(", size(labels), "(L1, 1X))"
-      write(nunit, str_fmt) (emissive_columns(i), i=1, size(emissive_columns))
-
-      write(str_fmt, '(a, i0, a)') "(ES10.4, ", size(labels), "(1X, I0))"
+      write(nunit, label_fmt) (trim(adjustl(labels(i))), i=1,size(labels))
+      write(nunit, em_fmt) (emissive_columns(i), i=1, size(emissive_columns))
       do i = 1, n_bins
-        write(nunit, str_fmt) bins(i), counts(i, :)
+        write(nunit, trim(adjustl(hist_fmt))) bins(i), hist(i, :)
       end do
       close(nunit)
     end subroutine write_histogram
