@@ -575,8 +575,8 @@ module mc
         "_salt_", salt, "_population.csv"
       write(pop_header, '(a, i0, a)') "(a, 1X, ", n_s, "(a, 1X), a)"
       open(newunit=nunit, file=pop_file)
-      write(nunit, pop_header) "Rep number",&
-        (trim(adjustl(s_names(i))), i=1,n_s), "rep end time"
+      write(nunit, pop_header) "Rep",&
+        (trim(adjustl(s_names(i))), i=1,n_s), "rep_end_time"
 
       reploop: do while (curr_maxcount.lt.max_counts)
 

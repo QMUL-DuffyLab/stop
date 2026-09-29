@@ -76,6 +76,6 @@ if __name__ == "__main__":
 
     for i in range(simulation_json["n_repeats"]):
         hist_file = os.path.join(outdir, f"{protein_name}_run_{i + 1:1d}.csv")
-        pulse_file = os.path.join(outdir, f"pulse.txt")
-        fit.multi_fit(hist_file, 3, pulse_file)
+        fit.plot_all_from_file(hist_file)
+        fit.multi_fit(hist_file, 3)
     print("Finished!")

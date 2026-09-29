@@ -8,7 +8,7 @@ the idea is that you figure out the details of your protein, what it's made up o
 Installation
 ============
 
-You'll need a modern version of Python (I'm using 3.14) with numpy, scipy, matplotlib, pandas, sympy, as well as pyqt6 if you want to use the GUI and a modern Fortran compiler with OpenMPI to compile the fortran kernel. I'm using GCC 14.2.1 on Linux and it works fine, but all the Fortran is strictly F2008 so any modern Fortran compiler should work. It also all works on WSL; I have not and will not figure out how to get it to work natively on windows so do not ask me.
+You'll need a modern version of Python (I'm using 3.14) with numpy, scipy, matplotlib, pandas, pyqt6 if you want to use the GUI, and a modern Fortran compiler with make and OpenMPI to compile the fortran kernel. I'm using GCC 14.2.1 on Linux and it works fine, but all the Fortran is strictly F2008 so any modern Fortran compiler should work. It also all works on WSL; I have not and will not figure out how to get it to work natively on windows so do not ask me.
 
 The easiest way to ensure you have everything you need is to first install miniforge (see [here](https://github.com/conda-forge/miniforge?tab=readme-ov-file#install)), clone this repo and then do
 ```
@@ -37,8 +37,7 @@ Also check the "Recommended number of cores" line for a *maximum* number of core
 Running in a terminal
 =====================
 
-Alternatively you can run it manually in a terminal by calling `python main.py ` with various options. They're documented in `main.py`; you can do `python main.py -h` to see details. The compulsory first argument is `-pf FILE`, where `FILE` should be a filename containing JSON data for the protein you want to simulate.
-Optional ones are:
+Alternatively you can run it manually in a terminal by calling `python main.py ` with various options. They're documented in `main.py`; you can do `python main.py -h` to see details. Command line arguments are:
 
 - `-pf PROTEIN_FILE`, where `PROTEIN_FILE` should be the name of the file where the protein parameters are stored. Default is `protein.json` in the current directory.
 - `-sf SIMULATION_FILE`, where `SIMULATION_FILE` should be the name of the file where the simulation parameters are stored. Default is `simulation.json` in the current directory.
@@ -48,10 +47,7 @@ Optional ones are:
 - `--connection` or `--no-connection`. if `--connection`, hopping rates will be left as-is in order to simulate a connected aggregate of proteins; if `--no-connection`, this will zero out all hopping rates to simulate an ensemble of unconnected proteins (e.g. if you're experimenting on membrane proteins in detergent). A warning will be printed to stdout if the hopping rates are all zero but you've set `--connection` or vice-versa, but it will happily still run.
 - `-n NUM_CORES`, where `N_CORES` should be a number. This is the number of cores that will be passed to the OpenMPI call in the fortran - more cores will make it run faster so long as you have the cores available on your machine. Setting this to use more cores than you actually have will make the performance worse, though. The GUI will show what `os.cpu_count()` returns, which you should probably take as a maximum recommended value, and actually the best value is quite probably smaller than that. On a modern laptop try 2 or 4 and see how it goes.
 
-The Python wrapper will take all these options, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns. By default it will use the decay times of the protein states as a starting point and try 1- to n-exponential fits based on those.
-
-Note that the fitting script is not that sophisticated really; it cuts off the trace at the peak and fits 1- to n-exponentials to the tail, then fixes the fitted time constants in place and does a reconvolution fit with the IRF for the amplitudes.
-It does not do anything more complicated than that; the output traces are just CSVs and therefore hopefully it should be possible to load them into another fitting program fairly easily.
+The Python wrapper will take all these options, make Fortran-friendly parameter files and copy them to the output directory, run `make all` on the Fortran if necessary, run it for you, and then perform reconvolution fits when the Fortran returns.
 
 Parameter JSON setup
 ====================
@@ -60,7 +56,7 @@ Protein parameters
 ------------------
 
 The JSON file is structured as a list of named proteins each with a set of parameters:
-```JSON
+```python
 {
     "protein_1" : {
       {protein 1 parameters}
@@ -73,7 +69,7 @@ The JSON file is structured as a list of named proteins each with a set of param
 ```
 
 For a given protein we have:
-```JSON
+```python
 "protein_name" : {
     "n_p": n_p, # the number of pigments in the protein
     "n_s": n_s, # the number of total pigment states
@@ -109,7 +105,7 @@ Simulation parameters
 This is a simpler little file. I think that most if not all of these should be self-explanatory, but just in case:
 
 - `fwhm` is the FWHM of your pulse (again in SI units)
-- `fluence` is in units of photons per pulse per square centimetre ($ \gamma \text{ pulse }^{-1} cm^{-2} $)
+- `fluence` is in units of photons per pulse per square centimetre ($`\gamma \text{ pulse }^{-1} cm^{-2}`$)
 - `n_sites` is what it sounds like - it shouldn't make much difference really, but it's there
 - `lattice` can be either "hex", "square" or "line". unless you have a good reason to think your protein collection is specifically a line, you can probably just leave this.
 - `rep_rate` is the rep rate in hertz
@@ -127,7 +123,7 @@ The main Python code will make plots of every process that had nonzero counts at
 Fitting
 =======
 
-The code will call a fitting function when it finishes its runs. The fit works by doing differential evolution with a non-negative least squares solver as the objective function; it will try to do 1 to 3 exponential fits by default. Fit results and plots and so forth will be placed in the output folder as well. Note that there's no sophisticated stuff done to compare the fits between repeats or anything because I am a little baby who's scared of doing statistics.
+The code will call a fitting function when it finishes its runs. The fit works by doing differential evolution with a non-negative least squares solver as the objective function; it will try to do 1 to 3 exponential fits by default. Fit results and plots and so forth will be placed in the output folder as well. The best fit parameters for each will be in a file named `PROTEIN_run_N_fit_log.txt`, and the fitted curves will be in a file called `PROTEIN_run_N_fits.csv` along with a column labelled "Emitted", which is the sum of all the emissive decays (i.e. what the detector would actually see, and therefore the thing that's been fitted to). These files should be trivial to reload using pandas or put in a spreadsheet or whatever if you want to use a different fitting method. Note that there's no sophisticated stuff done to compare the fits between repeats or do region of interest fitting or anything like that because I am a little baby who's scared of doing statistics.
 
 FAQS
 ====

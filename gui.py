@@ -68,9 +68,9 @@ class loadExisting(QWizardPage):
         QWizardPage.__init__(self, parent)
         self.parent = parent
         self.setTitle("Load existing protein data.")
-        self.setSubTitle("If you'd like to import existing protein data, "
-                "you can do that here. Otherwise, click Next to start "
-                "specifying the parameters of your protein.")
+        self.setSubTitle("If you'd like to import existing protein data "
+                "to edit, you can do that here. Otherwise, click Next "
+                "to start specifying the parameters of your protein.")
         self.data = self.parent.protein_data
 
     def initializePage(self):
@@ -82,9 +82,6 @@ class loadExisting(QWizardPage):
         self.browseButton = QPushButton("Browse") 
         self.browseButton.setToolTip("Search for a JSON file")
         self.browseButton.clicked.connect(self.onBrowseButton)
-        self.loadButton = QPushButton("Load") 
-        self.loadButton.setToolTip("Click to import JSON data from this file")
-        self.loadButton.clicked.connect(self.onLoadButton)
         self.proteinChooser = QComboBox()
         self.resetButton = QPushButton("Reset")
         self.resetButton.setToolTip("Delete loaded JSON data and start again")
@@ -92,7 +89,6 @@ class loadExisting(QWizardPage):
         gl.addWidget(QLabel("Filename:"), 0, 0)
         gl.addWidget(self.filename, 0, 1)
         gl.addWidget(self.browseButton, 0, 2)
-        gl.addWidget(self.loadButton, 0, 3)
         self.plabel = QLabel("Protein name:")
         self.plabel.setToolTip('''Give your protein a short, descriptive name.
 Will be used to generate output directory structure.''')
@@ -108,8 +104,6 @@ Will be used to generate output directory structure.''')
                                               os.getcwd(),
                                               "JSON file (*.json)")
         self.filename.setText(self.fn)
-
-    def onLoadButton(self):
         self.load_success, self.all_json_data = load_from_file(self,
                 self.filename.text())
         if self.load_success:
@@ -197,27 +191,30 @@ class nameNumber(QWizardPage):
         self.updated_keys = ["n_p", "n_s"]
 
     def checkData(self):
-        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
+        return parse.parse_protein(self.parent.protein_data,
+                keys=self.updated_keys)
 
     def validatePage(self):
         self.updateData()
         if self.parent.protein_name == "":
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", "Protein name cannot be blank.")
+            self.title(), "Protein name cannot be blank.")
             return False
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class namePigmentsStates(QWizardPage):
     def __init__(self, parent):
         QWizardPage.__init__(self, parent)
         self.setTitle("Names of pigments and states")
-        self.setSubTitle("The fortran will use these names in the "
-                "histogram that it outputs, so you can tell which "
-                "events are which.")
+        self.setSubTitle("These names will be used in the "
+            "output files from the fortran. Short names with "
+            "no spaces recommended, otherwise the fitting code will "
+            "get confused about which histogram column is which."
+                )
         self.parent = parent
         self.updated_keys = []
         self.layout = QVBoxLayout()
@@ -305,10 +302,12 @@ class namePigmentsStates(QWizardPage):
         self.data["n_tot"]         = [int(p.value()) for p in self.n_tot]
         self.data["n_thermal"]     = [int(p.value()) for p in self.n_thermal]
         self.parent.protein_data = self.data
-        self.updated_keys = ["pigment_names", "state_names", "n_tot", "n_thermal"]
+        self.updated_keys = ["pigment_names", "state_names",
+                "n_tot", "n_thermal"]
 
     def checkData(self):
-        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
+        return parse.parse_protein(self.parent.protein_data,
+                keys=self.updated_keys)
 
     def validatePage(self):
         '''
@@ -319,7 +318,7 @@ class namePigmentsStates(QWizardPage):
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class stateProperties(QWizardPage):
@@ -349,10 +348,12 @@ in seconds. e.g. for 1ps, enter 1e-12.''')
 Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.pl.addWidget(self.emissiveLabel, 0, 4)
         self.pigmentLabel = QLabel("Pigment") 
-        self.pigmentLabel.setToolTip("Which pigment does each state belong to?")
+        self.pigmentLabel.setToolTip(
+                "Which pigment does each state belong to?")
         self.pl.addWidget(self.pigmentLabel, 0, 5)
         self.abundanceLabel = QLabel("Abundance") 
-        self.pigmentLabel.setToolTip("What fraction of sites have this state present?")
+        self.pigmentLabel.setToolTip(
+                "What fraction of sites have this state present?")
         self.pl.addWidget(self.abundanceLabel, 0, 6)
 
     def initializePage(self):
@@ -462,14 +463,15 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
                        "which_pigment", "abundance"]
 
     def checkData(self):
-        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
+        return parse.parse_protein(self.parent.protein_data,
+                keys=self.updated_keys)
         
     def validatePage(self):
         self.updateData()
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class matrixTables(QWizardPage):
@@ -523,7 +525,8 @@ class matrixTables(QWizardPage):
                 if key == "intra":
                     item = QTableWidgetItem()
                     item.setBackground(QtGui.QColor("darkGray"))
-                    item.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
+                    item.setFlags(
+                    Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
                     widget.setItem(i, i, item)
         # ann_rem
         for i in range(n_s):
@@ -592,14 +595,15 @@ class matrixTables(QWizardPage):
                     msgs.append(f"States {s1} and {s2} have an annihilation "
                     "remainder set but a zero annihilation rate.")
                     return False, msgs
-        return parse.parse_protein(self.parent.protein_data, keys=self.updated_keys)
+        return parse.parse_protein(self.parent.protein_data, 
+                keys=self.updated_keys)
 
     def validatePage(self):
         self.updateData()
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class saveProteinPage(QWizardPage):
@@ -636,9 +640,6 @@ class saveProteinPage(QWizardPage):
     def save_to_file(self):
         name = self.parent.protein_name
         final_data = {name: self.data}
-        if 'decay' in final_data:
-            # decay won't be there if we've already saved a file
-            del final_data[name]['decay']
         success = True
         self.existing_data = {}
         if os.path.isfile(self.filename.text()):
@@ -648,7 +649,7 @@ class saveProteinPage(QWizardPage):
                     self.load_success = True
                 except:
                     box = QMessageBox.critical(self,
-                    "whoopsy daisy", 
+                    "JSON save failed", 
                     "Failed to load existing protein data from JSON to merge.")
                     self.load_success = False
         # if the protein name matches one that's already there and we just
@@ -690,13 +691,13 @@ class saveProteinPage(QWizardPage):
     def validatePage(self):
         if not self.save_success:
             box = QMessageBox.critical(self,
-            "whoopsy daisy", 
+            "Protein not saved", 
             "Protein data has not been saved successfully.")
             return False
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class loadSimulation(QWizardPage):
@@ -715,17 +716,13 @@ class loadSimulation(QWizardPage):
         self.browseButton = QPushButton("Browse") 
         self.browseButton.setToolTip("Search for a JSON file")
         self.browseButton.clicked.connect(self.onBrowseButton)
-        self.loadButton = QPushButton("Load") 
-        self.loadButton.setToolTip("Click to import JSON data from this file")
-        self.loadButton.clicked.connect(self.onLoadButton)
         self.resetButton = QPushButton("Reset")
         self.resetButton.setToolTip("Delete loaded JSON data and start again")
         self.resetButton.clicked.connect(self.onResetButton)
         gl.addWidget(QLabel("Filename:"), 0, 0)
         gl.addWidget(self.filename, 0, 1)
         gl.addWidget(self.browseButton, 0, 2)
-        gl.addWidget(self.loadButton, 0, 3)
-        gl.addWidget(self.resetButton, 1, 2)
+        gl.addWidget(self.resetButton, 0, 3)
         layout.addLayout(gl)
         self.setLayout(layout)
 
@@ -734,8 +731,6 @@ class loadSimulation(QWizardPage):
                                               os.getcwd(),
                                               "JSON file (*.json)")
         self.filename.setText(self.fn)
-
-    def onLoadButton(self):
         self.load_success, self.data = load_from_file(self,
                                                       self.filename.text())
 
@@ -931,7 +926,7 @@ the fortran code in some way.''')
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,
-            "whoospy daisy", ('\n').join(msgs))
+            self.title(), ('\n').join(msgs))
         return valid
 
 class saveSimPage(QWizardPage):
@@ -983,7 +978,8 @@ class saveSimPage(QWizardPage):
                         json.dump(dd, f)
                 except:
                     box = QMessageBox.critical(self,
-                    "whoospy daisy", "Failed to save JSON")
+                    "JSON overwrite failed",
+                    "Failed to overwrite simulation JSON")
                     success = False
             else:
                 success = False
@@ -993,7 +989,7 @@ class saveSimPage(QWizardPage):
                     json.dump(dd, f)
             except:
                 box = QMessageBox.critical(self,
-                "whoospy daisy", "Failed to save JSON")
+                "JSON save failed", "Failed to save simulation JSON")
                 success = False
         if success:
             self.parent.sim_file = self.filename.text()
@@ -1145,11 +1141,10 @@ class main_window(main_ui_class, main_ui_widget):
             if all([h == 0.0 for h in self.pd['hop']]):
                 box = QMessageBox.warning(self,
                 "Simulation errors","All hopping rates are set to zero "
-                "but connection box is checked. Proceed?")
-                box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
-                box.setDefaultButton(QtMessageBox.StandardButton.No)
-                button = box.exec()
-                if button == QMessageBox.No:
+                "but connection box is checked. Proceed?", 
+                QMessageBox.StandardButton.Yes | 
+                QMessageBox.StandardButton.No)
+                if box == QMessageBox.StandardButton.No:
                     valid = False
         else:
             c = "--no-connection"
@@ -1157,11 +1152,9 @@ class main_window(main_ui_class, main_ui_widget):
                 box = QMessageBox.warning(self,
                 "Simulation errors","There are non-zero hopping rates, "
                 "but connection box is set to unconnected (detergent)"
-                ". Proceed?")
-                box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
-                box.setDefaultButton(QtMessageBox.StandardButton.No)
-                button = box.exec()
-                if button == QMessageBox.No:
+                ". Proceed?", QMessageBox.StandardButton.Yes |
+                QMessageBox.StandardButton.No)
+                if box == QMessageBox.StandardButton.No:
                     valid = False
 
         args = ["main.py", "-pf", pf, "-sf", sf, "-p", p, c, "-n", n]
@@ -1199,7 +1192,7 @@ class main_window(main_ui_class, main_ui_widget):
             with open(outfile, "w") as f:
                 f.write(output)
         except:
-            box = QMessageBox(self, "whoopsy daisy",
+            box = QMessageBox(self, "Logfile save error",
                 "Unable to save log file.")
         self.process = None
         self.runButton.setEnabled(True)
@@ -1230,7 +1223,6 @@ class main_window(main_ui_class, main_ui_widget):
 
 def start():
     app =QtWidgets.QApplication([])
-    # widget = STOPSetup()
     widget = main_window(None)
     widget.show()
     sys.exit(app.exec())
