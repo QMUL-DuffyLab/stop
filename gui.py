@@ -590,12 +590,14 @@ class matrixTables(QWizardPage):
         ann = self.data["ann"]
         ann_rem = self.data["ann_remainder"]
         for i in range(self.data["n_s"]):
-            s1 = state_names[i]
+            s1 = self.data["state_names"][i]
             for j in range(self.data["n_s"]):
-                s2 = state_names[j]
+                s2 = self.data["state_names"][j]
                 if ann[i][j] == 0.0 and ann_rem[i][j] > 0:
                     msgs.append(f"States {s1} and {s2} have an annihilation "
-                    "remainder set but a zero annihilation rate.")
+                    "remainder set but a zero annihilation rate. "
+                    "Either set the remainder to None in the bottom right, "
+                    "or provide a non-zero annihilation rate between them.")
                     return False, msgs
         return parse.parse_protein(self.parent.protein_data, 
                 keys=self.updated_keys)
