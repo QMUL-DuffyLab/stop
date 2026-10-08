@@ -72,6 +72,7 @@ class loadExisting(QWizardPage):
                 "to edit, you can do that here. Otherwise, click Next "
                 "to start specifying the parameters of your protein.")
         self.data = self.parent.protein_data
+        self.parent.loaded = False
 
     def initializePage(self):
         layout = QVBoxLayout()
@@ -107,6 +108,7 @@ Will be used to generate output directory structure.''')
         self.load_success, self.all_json_data = load_from_file(self,
                 self.filename.text())
         if self.load_success:
+            self.parent.loaded = True
             protein_names = self.all_json_data.keys()
             for name in protein_names:
                 self.proteinChooser.addItem(name)
@@ -129,6 +131,9 @@ Will be used to generate output directory structure.''')
             self.data = {}
 
     def validatePage(self):
+        if self.parent.loaded and 'n_p' not in self.parent.protein_data:
+            self.load_success, self.all_json_data = load_from_file(self,
+                    self.filename.text())
         self.updateData()
         return True
 
@@ -140,6 +145,7 @@ class nameNumber(QWizardPage):
                 "if not yet given, the number of different pigments, "
                 "and the number of states in total across them.")
         self.parent = parent
+        self.updated_keys = [""]
         layout = QVBoxLayout()
         gl = QGridLayout()
         self.protein_name = QLineEdit()
@@ -185,17 +191,40 @@ class nameNumber(QWizardPage):
         up by cleanupPage()
         '''
         self.parent.protein_name = self.field('protein_name')
+        if (self.parent.loaded and (self.n_p.value() < self.data["n_p"] or 
+            self.n_s.value() < self.data["n_s"])):
+            # in theory it's possible to reduce these numbers and
+            # keep some of the protein data that's been loaded, but
+            # some things are unclear (which pigment do you want to delete?
+            # should states on that pigment be kept? etc.) so just erase
+            # all the data
+            box = QMessageBox.warning(self,
+            "Changing values", "Reducing the number of pigments or "
+            "states will delete the loaded data and start "
+            "from scratch (it's not clear how to do that systematically)."
+            " Proceed?", 
+            QMessageBox.StandardButton.Yes | 
+            QMessageBox.StandardButton.No)
+            if box == QMessageBox.StandardButton.No:
+                return False
+            else:
+                self.data = {}
         self.data["n_p"]  = self.field('n_p')
         self.data["n_s"]  = self.field('n_s')
-        self.parent.protein_data = self.data
         self.updated_keys = ["n_p", "n_s"]
+        self.parent.protein_data = self.data
+        return True
 
     def checkData(self):
         return parse.parse_protein(self.parent.protein_data,
                 keys=self.updated_keys)
 
     def validatePage(self):
-        self.updateData()
+        valid = self.updateData()
+        if not valid:
+            self.errors = QMessageBox.critical(self,
+            self.title(), "Updating data failed.")
+            return False
         if self.parent.protein_name == "":
             self.errors = QMessageBox.critical(self,
             self.title(), "Protein name cannot be blank.")
@@ -335,26 +364,6 @@ class stateProperties(QWizardPage):
         self.setLayout(self.layout)
         self.n_s = 0
         # column headers
-        self.hopLabel = QLabel("Hopping time (s)")
-        self.hopLabel.setToolTip(
-'''The hopping time for each state from one protein to its neighbours,
-in seconds. e.g. for 1ps, enter 1e-12.''')
-        self.pl.addWidget(self.hopLabel, 0, 1)
-        self.pl.addWidget(QLabel("Decay time (s)"), 0, 2)
-        self.pl.addWidget(QLabel("Cross-section (cm^{-1})"), 0, 3)
-        self.emissiveLabel = QLabel("Emissive decay?")
-        self.emissiveLabel.setToolTip(
-'''At least one decay must be emissive; that is, visible to the detector.
-Multiple boxes can be checked here if there are multiple decay pathways.''')
-        self.pl.addWidget(self.emissiveLabel, 0, 4)
-        self.pigmentLabel = QLabel("Pigment") 
-        self.pigmentLabel.setToolTip(
-                "Which pigment does each state belong to?")
-        self.pl.addWidget(self.pigmentLabel, 0, 5)
-        self.abundanceLabel = QLabel("Abundance") 
-        self.pigmentLabel.setToolTip(
-                "What fraction of sites have this state present?")
-        self.pl.addWidget(self.abundanceLabel, 0, 6)
 
     def initializePage(self):
         self.data = self.parent.protein_data
@@ -365,6 +374,26 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
         self.emissive  = []
         self.which_p   = []
         self.abundance = []
+        self.hopLabel = QLabel("Hopping time (s)")
+        self.hopLabel.setToolTip(
+'''The hopping time for each state from one protein to its neighbours,
+in seconds. e.g. for 1ps, enter 1e-12.''')
+        self.decayLabel = QLabel("Decay time (s)")
+        self.decayLabel.setToolTip("Characteristic decay time of the "
+            "state in seconds.")
+        self.xsecLabel = QLabel("Cross-section (cm^{-2})")
+        self.xsecLabel.setToolTip("Absorption cross-section at the "
+        "laser wavelength, per protein.")
+        self.emissiveLabel = QLabel("Emissive decay?")
+        self.emissiveLabel.setToolTip(
+'''At least one decay must be emissive; that is, visible to the detector.
+Multiple boxes can be checked here if there are multiple decay pathways.''')
+        self.pigmentLabel = QLabel("Pigment") 
+        self.pigmentLabel.setToolTip(
+                "Which pigment does each state belong to?")
+        self.abundanceLabel = QLabel("Abundance") 
+        self.pigmentLabel.setToolTip(
+                "What fraction of sites have this state present?")
         for i in range(self.n_s):
             row = i + 1
             state_name = self.data["state_names"][i]
@@ -374,6 +403,12 @@ Multiple boxes can be checked here if there are multiple decay pathways.''')
             self.emissive.append(QCheckBox())
             self.which_p.append(QComboBox())
             self.abundance.append(QLineEdit("0.0"))
+            self.pl.addWidget(self.hopLabel, 0, 1)
+            self.pl.addWidget(self.decayLabel, 0, 2)
+            self.pl.addWidget(self.xsecLabel, 0, 3)
+            self.pl.addWidget(self.emissiveLabel, 0, 4)
+            self.pl.addWidget(self.abundanceLabel, 0, 6)
+            self.pl.addWidget(self.pigmentLabel, 0, 5)
             self.pl.addWidget(QLabel(state_name), row, 0)
             self.pl.addWidget(self.hop[i], row, 1)
             self.pl.addWidget(self.decay[i], row, 2)
@@ -1017,6 +1052,7 @@ class ProteinDataBuilder(QWizard):
     def __init__(self):
         super().__init__()
         self.resize(QtCore.QSize(800, 600))
+        self.loaded = False # if protein data was loaded
         self.protein_data = {}
         self.protein_name = ""
         self.protein_file = ""
