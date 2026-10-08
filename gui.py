@@ -590,7 +590,9 @@ class matrixTables(QWizardPage):
         ann = self.data["ann"]
         ann_rem = self.data["ann_remainder"]
         for i in range(self.data["n_s"]):
+            s1 = state_names[i]
             for j in range(self.data["n_s"]):
+                s2 = state_names[j]
                 if ann[i][j] == 0.0 and ann_rem[i][j] > 0:
                     msgs.append(f"States {s1} and {s2} have an annihilation "
                     "remainder set but a zero annihilation rate.")
@@ -690,10 +692,12 @@ class saveProteinPage(QWizardPage):
 
     def validatePage(self):
         if not self.save_success:
-            box = QMessageBox.critical(self,
-            "Protein not saved", 
-            "Protein data has not been saved successfully.")
-            return False
+            self.save_success = self.save_to_file()
+            if not self.save_success:
+                box = QMessageBox.critical(self,
+                "Protein not saved", 
+                "Protein data has not been saved successfully.")
+                return False
         valid, msgs = self.checkData()
         if not valid:
             self.errors = QMessageBox.critical(self,

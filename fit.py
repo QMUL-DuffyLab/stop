@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-import os            # For file and directory handling
-import numpy as np    # For numerical operations
-import pandas as pd   # For data manipulation with DataFrames
-import matplotlib.pyplot as plt  # For plotting
+import os
+import sys
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from scipy.optimize import nnls, differential_evolution
 
 '''
@@ -302,10 +303,13 @@ def multi_fit(filename, nmax, irf_file=None):
             for axis in ax:
                 axis.grid(visible=True, which='major', axis='both',
                           color='k', alpha=0.25, linestyle='--', lw=0.5)
-            outfile = os.path.splitext(filename)[0] + f"n_exp_{n_exp}_ml_fit.pdf"
+            outfile = f"{os.path.splitext(filename)[0]}_n_exp_{n_exp}_fit.pdf"
             fig.suptitle(tstr)
             fig.savefig(outfile)
             plt.close()
     fdf = pd.DataFrame(od)
     fdf_file = os.path.splitext(filename)[0] + "_fits.csv"
     fdf.to_csv(fdf_file)
+
+if __name__ == "__main__":
+    multi_fit(sys.argv[1], int(sys.argv[2]))
