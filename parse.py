@@ -240,7 +240,6 @@ def generate_output_dirs(pj, sj, pname, connected, base_outdir="out"):
         os.makedirs(outdir, exist_ok=True)
     except:
         outdir = None
-    print(f"Output directory: {outdir}")
     return outdir
 
 def write_fortran_inputs(pj, sj, pname, outdir):

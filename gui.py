@@ -602,11 +602,14 @@ class matrixTables(QWizardPage):
                 if i == j:
                     intra[i, i] = self.data['decay'][i]
                 else:
-                    intra[i, j] = float(self.intra.item(i, j).text())
+                    it = self.intra.item(i, j).text()
+                    intra[i, j] = float(it) if it != '' else 0.0
                 if j >= i:
                     # annihilation matrix must be symmetric
-                    ann[i, j] = float(self.ann.item(i, j).text())
-                    ann[j, i] = float(self.ann.item(i, j).text())
+                    at = self.ann.item(i, j).text()
+                    ar = float(at) if at != '' else 0.0
+                    ann[i, j] = ar
+                    ann[j, i] = ar
                 current = self.ann_rem.itemAtPosition(i + 1, j + 1)
                 # None is always added as the first (0) index
                 ann_rem[i, j] = current.widget().currentIndex()
@@ -1245,18 +1248,18 @@ class main_window(main_ui_class, main_ui_widget):
         '''
         if self.process is None:
             return
-        self.process.kill()
+        self.process.terminate()
+        self.process.waitForFinished()
         self.outputArea.appendPlainText("Simulation stopped.")
         self.process = None
 
     def quit(self):
         if self.process is not None:
             box = QMessageBox.critical(self,
-            "Really quit?", "Simulation is running. Really quit?")
-            box.setStandardButtons(QtMessageBox.Yes | QtMessageBox.No)
-            box.setDefaultButton(QtMessageBox.StandardButton.No)
-            button = box.exec()
-            if button == QMessageBox.Yes:
+            "Really quit?", "Simulation is running. Really quit?",
+            QMessageBox.StandardButton.Yes | 
+            QMessageBox.StandardButton.No)
+            if box == QMessageBox.StandardButton.Yes:
                 self.kill()
                 self.close()
         else:
