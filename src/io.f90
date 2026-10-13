@@ -15,7 +15,7 @@ module io
   integer(kind=CI), public :: n_p, n_s, n_sites, n_bins, n_losses,&
     n_counts, n_repeats, burn_reps
   real(kind=CF), public :: fwhm, fluence, rep_rate, tmax, dt1, dt2, binwidth
-  character(len=10), allocatable, public :: p_names(:), s_names(:)
+  character(len=50), allocatable, public :: p_names(:), s_names(:)
   integer(kind=CI), allocatable, public :: n_tot(:), n_thermal(:),&
     which_p(:), ann_remainder(:, :), counts(:, :), site_moves(:, :),&
     site_gen_hist(:, :), site_ann_hist(:, :)
